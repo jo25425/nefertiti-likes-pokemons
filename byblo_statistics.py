@@ -1,3 +1,4 @@
+#!/usr/bin/env pythons
 
 import os, sys, argparse, subprocess
 import datetime, random, string
@@ -8,20 +9,20 @@ def eventsStats(inputFileName, percentList=[1], reuse=False):
 	print "\n>> start:eventsStats - full file size=", os.path.getsize(inputFileName), "bytes"
 	
 	sampleFileNames, statsFileNames = [], []
-	if not os.path.exists(".\\stats"):
-		os.makedirs(".\\stats")
+	if not os.path.exists("./stats"):
+		os.makedirs("./stats")
 		
 	for pct in percentList:
 		
 		## determine and store data file name
-		sampleFileName = inputFileName + "-sample" + string.replace(str(pct), '.', '-') if pct != 1 else inputFileName
+		sampleFileName = inputFileName + "-%" + string.replace(str(pct), '.', '-') if pct != 1 else inputFileName
 		sampleFileNames.append(sampleFileName)
 		
 		## go through file + create sample if required
 		nbEntries, nbFeatures = browseEvents(sampleFileName, pct, reuse, inputFileName)
 		
 		## write statistics
-		statsFileName = ".\\stats\\" + sampleFileName[string.rfind(sampleFileName, '\\'):] + ".stats.events"
+		statsFileName = "./stats/" + os.path.basename(sampleFileName) + ".stats.events"
 		statsFileNames.append(statsFileName)
 		
 		print "   Writing statistics in " + statsFileName + "\n"
@@ -71,7 +72,7 @@ def bybloStats(sampleFileNames, bybloParams="", reuse=False):
 	print "\n>> start:bybloStats"
 	
 	## prepare for Byblo output
-	thesauriDir = ".\\thesauri\\"
+	thesauriDir = "./thesauri/"
 	if not os.path.exists(thesauriDir):
 		os.makedirs(thesauriDir)
 		
@@ -80,11 +81,11 @@ def bybloStats(sampleFileNames, bybloParams="", reuse=False):
 		## initialise variables for stats
 		
 		## run Byblo for this sample file
-		runTime = runByblo(fileName, thesauriDir, bybloParams)
+		runTime = runByblo(os.path.abspath(fileName), os.path.abspath(thesauriDir), bybloParams)
 		
 		## write statistics
-		thesaurusName = thesauriDir + sampleFileName[string.rfind(sampleFileName, '\\'):]
-		statsFileName = ".\\stats\\" + sampleFileName[string.rfind(sampleFileName, '\\'):] + ".stats.byblo"
+		thesaurusName = thesauriDir + os.path.basename(sampleFileName)
+		statsFileName = "./stats/" + os.path.basename(sampleFileName) + ".stats.byblo"
 		statsFileNames.append(statsFileName)
 		statsFile = open(statsFileName, 'a')
 		
@@ -102,17 +103,23 @@ def bybloStats(sampleFileNames, bybloParams="", reuse=False):
 def runByblo(inputFileName, outputDir,  bybloParams):
 	print "\n   >> start:singleBybloRun "
 
-	stime = datetime.datetime.now()
-	#fnull = open(os.devnull, 'w')
-	bybloLoc = "..\\Byblo-2.0.1"
-	print bybloLoc+"\\byblo.sh "
+	# temporary
+	bybloLoc = "../Byblo-2.0.1"
+	print os.path.abspath(bybloLoc+"/byblo.sh ")
 	print os.path.abspath(inputFileName)
 	print os.path.abspath(outputDir)
-	out = subprocess.call(bybloLoc+"\\byblo.sh " + "-i " + os.path.abspath(inputFileName) + " -o " + os.path.abspath(outputDir) +\
+	
+	stime = datetime.datetime.now()
+	#fnull = open(os.devnull, 'w')
+	os.chdir(bybloLoc)
+	print os.getcwd()
+	out = subprocess.call(os.path.abspath("./byblo.sh ") + \
+		" -i " + inputFileName + " -o " + outputDir +\
 		" "+ bybloParams, shell = True\
 		#, stdout = fnull, stderr = fnull\
 		)
 	#fnull.close()
+	os.chdir("../bybloStats")
 	if(not out == 0):
 		print "   Byblo failed on input file: " + inputFileName + "\n   Fail Code: " + str(out)
 		sys.exit()
