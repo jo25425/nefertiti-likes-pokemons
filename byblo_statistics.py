@@ -42,7 +42,7 @@ def browseEvents(sampleFileName, pct, reuse=False, inputFileName=None):
 	nbEntries, nbFeatures = 0, 0
 	
 	## go through file
-	if reuse and os.path.isfile(sampleFileName):
+	if pct == 1 or reuse and os.path.isfile(sampleFileName):
 		print "   Reusing file for", 100.0*pct, "%"
 		sampleFile = open(sampleFileName, 'r')
 		
@@ -73,21 +73,20 @@ def bybloStats(sampleFileNames, bybloParams="", reuse=False):
 	
 	## prepare for Byblo output
 	thesauriDir = "./thesauri/"
+	statsFileNames = []
 	if not os.path.exists(thesauriDir):
 		os.makedirs(thesauriDir)
-		
+	
 	for fileName in sampleFileNames:
-		
-		## initialise variables for stats
 		
 		## run Byblo for this sample file
 		runTime = runByblo(os.path.abspath(fileName), os.path.abspath(thesauriDir), bybloParams)
 		
 		## write statistics
-		thesaurusName = thesauriDir + os.path.basename(sampleFileName)
-		statsFileName = "./stats/" + os.path.basename(sampleFileName) + ".stats.byblo"
+		thesaurusName = thesauriDir + os.path.basename(fileName)
+		statsFileName = "./stats/" + os.path.basename(fileName) + ".stats.byblo"
 		statsFileNames.append(statsFileName)
-		statsFile = open(statsFileName, 'a')
+		statsFile = open(statsFileName, 'w')
 		
 		for suffix in [".sims.neighbours.strings",".events.filtered",".entries.filtered"]:
 			size = os.path.getsize(thesaurusName + suffix)
@@ -126,9 +125,9 @@ def runByblo(inputFileName, outputDir,  bybloParams):
 		
 	
 	etime = datetime.datetime.now()
-	totalTime = timeFinish - timeStart
-	# use implicit conversion!!!
+	totalTime = etime - stime
 	runTime = float(totalTime.total_seconds())/float(3600)
+	print "runTime=", runTime
 	print "   >> end:singleBybloRun "
 	return runTime
 	
