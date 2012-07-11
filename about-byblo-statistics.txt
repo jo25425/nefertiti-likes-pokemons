@@ -1,0 +1,15 @@
+The program is for now very basic... and close to useless.
+
+Still to do:
+- why are there several colors in some histograms?????????????????
+- verify xhat happens to the reuse option after events handling. should be reused: same data => same stats => same graphs :)
+- delete [option on set] before exiting
+- remove permissions?
+- make it runnable on Windows? [is it even possible?]
+
+To develop:
+- find what is really needed (clearly, plots as they are now present no interest at all)
+- cumulative (easy), inverted (?) graphs
+- would very probably be a good idea to display information on the type of features that 
+were used (from bybloParams) as it obviously has an impact on the way the MAGIC parameters affect the data!
+- running time vs. occurences/types ratio???? (reflects sparsity of the data???)

@@ -125,12 +125,153 @@ def runByblo(inputFileName, outputDir,  bybloParams):
 		
 	
 	etime = datetime.datetime.now()
-	totalTime = etime - stime
-	runTime = float(totalTime.total_seconds())/float(3600)
+	totalTime = 
+	runTime = 1.0*(etime - stime).total_seconds() / 3600
 	print "runTime=", runTime
 	print "   >> end:singleBybloRun "
 	return runTime
 	
+def generateHistograms(sampleFileNames):
+	print "\n   >> start:generateHistograms "
+	
+	thesauriDir = "./thesauri/"
+	# don4t forget to creae this one!
+	outputDirectory = "./graphs/"
+	
+	for suffix in ['.entries.filtered','.events.filtered']:
+		for fileName in sampleFileNames:
+			self.createOccurenceHistogram(thesauriDir, os.path.basename(fileName), suffix, outputDirectory)
+
+	for suff in ['.sims.neighbours']:
+		for fileName in sampleFileNames:
+			self.createSimilaritiesHistogram(thesauriDir, os.path.basename(fileName), suffix, outputDirectory)
+	
+	
+	print "   >> end:generateHistograms"
+"""
+	...
+	
+	## Compiles the stats and builds the output plots...
+	results = {}
+	for loc in statsLocations:
+		self.resultsTable(loc, results)
+
+        
+        self.createPlots(results, outputDirectory)
+        
+        for suff in suffixesOccHist:
+            for pair in nameTimePairs:
+                self.createOccurenceHistogram(outputLocationByblo, suff, pair[0], outputDirectory)
+
+
+        for suff in suffixesSimHist:
+            for pair in nameTimePairs:
+                self.createSimilaritiesHistogram(outputLocationByblo, suff, pair[0], outputDirectory)
+        
+        ## If deleteOnExit is "True" then all files except the output are deleted
+        if(self.deleteOnExit):
+            directory = self.listdir_nohidden(self.mainDirectory)
+            for d in directory:
+                if not (d.startswith("output")):
+                    os.system("rm -r " + self.mainDirectory + d)
+
+        print "Output can be found here: " + outputDirectory
+        print "Process complete!"
+
+    ## Takes the table/dictionary of compiled stats and plots them against y and/or x.
+    ## If both x and y are empty then it plots all items against themselves
+    def createPlots(self, dictOfPlots, outputDirectory, yAxis="", xAxis=""):
+        print "Building Plots..."
+        
+        if(not yAxis == ""):
+            for key, value in dictOfPlots.iteritems():
+                if(not yAxis == key):
+                    self.createPlot(value, dictOfPlots[yAxis][1], key, yAxis)
+        elif(not xAxis == ""):
+            for key, value in dictOfPlots.iteritems():
+                if(not xAxis == key):
+                    self.createPlot(value, dictOfPlots[xAxis][1], key, xAxis)
+        else:
+            for key, value in dictOfPlots.iteritems():
+                for key2, value2 in dictOfPlots.iteritems():
+                    if(not key == key2):
+                        self.createPlot(value, value2, key, key2,outputDirectory)
+                        
+        print "Plots built!"
+
+    def createPlot(self, x, y, xlabel, ylabel, outputDirectory):
+        fig = pl.figure(xlabel + '-' + ylabel)
+        pl.plot(x,y)
+        pl.xlabel(xlabel)
+        pl.ylabel(ylabel)
+        pl.savefig(outputDirectory + xlabel+'-'+ylabel+'.pdf')
+
+    ## Creates the histograms for the frequency counts of a given file
+    def createOccurenceHistogram(self, directory, suffix, fileName, outputLocation):
+        print "Building occurence histogram for: " + suffix
+        inputLoc = directory + fileName + suffix
+        text = open(inputLoc, 'r')
+        out = []
+        ran = ny.arange(1, 1000, 10)
+        for line in text:
+            freq = line.split()[1]
+            out.append(int(freq))
+        xlabel = "Occurences"
+        ylabel = "Frequency"
+        pl.xlabel(xlabel)
+        pl.ylabel(ylabel)
+        pl.title('Occurence histogram for: ' + fileName + suffix)
+        histo = pl.hist(out, bins=ran)
+        pl.savefig(outputLocation + xlabel + '-' + ylabel + fileName + suffix + '.pdf')
+
+        print "Occurence histogram complete!"
+
+    def createSimilaritiesHistogram(self, directory, suffix, fileName, outputLocation):
+        print "Building similarities histogram for: " + suffix
+        
+        inputLoc = directory + fileName + suffix
+        text = open(inputLoc,'r')
+        out = []
+        ran = ny.arange(0.0,1.0,0.1)
+        for line in text:
+            spline = line.split()
+            i = 2
+            while i < len(spline):
+                if(i % 2 == 0):
+                    out.append(spline[i])
+                i = i + 1
+        xlabel = 'Similarity value'
+        ylabel = 'Frequency'
+        pl.xlabel(xlabel)
+        pl.ylabel(ylabel)
+        pl.title('Similarity histogram for: ' + fileName + suffix)
+        histo = pl.hist(out,bins=ran)
+        pl.savefig(outputLocation + xlabel + '-' + ylabel + fileName + suffix + '.pdf')
+        
+        print "Similarities histogram complete!"
+
+"""
+
+def statsToTable(fileNames):
+	dictList = []
+	## create dictionary for stats in each file
+	for f in sorted(fileNames):
+		dict = {}
+		for line in open(f, 'r'):
+			fields = line.split()
+			dict[fields[1]] = float(fields[0])
+		dictList.append(dict)
+	
+	
+	## for each key, list (as tuples) all entries (in all dictionnaries) that contain this key
+	table = []
+	for key in [dict.iterkeys() for dict in dictList]:
+		## list tuples in all dictionaries for a given key
+		table[key] = (tuple(d[k] for d in dictList if k in d))
+		
+	return table
+
+
 
 def print_lines(list, min=0, max=None, line_max=None, title="List"):
 	if max is None:
@@ -175,11 +316,15 @@ if __name__=='__main__':
 	sampleFileNames, statsFileNames = eventsStats(args.file[0].name, pctList, args.reuse)
 	print_lines(statsFileNames, title="Statistics files after feature extraction")
 	
-	## BYBLO STATS + sample file creation when necessary
+	## BYBLO STATS
 	statsFileNames += bybloStats(sampleFileNames, bybloParams, args.reuse)
 	print_lines(statsFileNames, title="Statistics files after byblo run")
 	
-
+	## STATS PLOTTING
+	
+	
+	
+	
 	etime = datetime.datetime.now()
 	print ">Execution took", etime-stime, "hours"
 	
