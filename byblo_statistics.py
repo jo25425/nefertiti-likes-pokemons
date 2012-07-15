@@ -1,57 +1,72 @@
-#!/usr/bin/env pythons
+#!/usr/bin/env python -c
 
 import os, sys, argparse, subprocess
+from os.path import\
+	basename as basename, \
+	exists as exists, \
+	getsize as getsize, \
+	join as join, \
+	abspath as abspath, \
+	isfile as isfile
+
 import datetime, random, string
-import numpy as ny
+import numpy as np
 import pylab as pl
 
 #################################################################
 	
-def eventsStats(inputFileName, outputDir, percentList=[1], reuse=False):
-	print "\n>> start:eventsStats - full file size=", os.path.getsize(inputFileName), "bytes"
+def eventsStats(inputFileName, outputDir, percentList=[1], reuse=False, verbose=False):
+	print "\n>> start:eventsStats - full file size=", getsize(inputFileName), "bytes"
 	
-	if not os.path.exists(outputDir):
+	if not exists(outputDir):
 		os.makedirs(outputDir)
 	
-	statsDir = os.path.join(outputDir, "stats/")
-	if not os.path.exists(statsDir):
+	statsDir = join(outputDir, "stats")
+	if not exists(statsDir):
 		os.makedirs(statsDir)
-	#~ print "statsDir = "+statsDir
 	
 	sampleFileNames, statsFileNames = [], []
 	for pct in percentList:
 		
-		## determine and store data file name
+		## determine and store data file name for input
 		sampleFileName = inputFileName + "-%" + string.replace(str(pct), '.', '-') if pct != 1 else inputFileName
 		sampleFileNames.append(sampleFileName)
 		
-		## go through file + create sample if required
-		nbEntries, nbFeatures = browseEvents(sampleFileName, pct, reuse, inputFileName)
-		
-		## write statistics
-		statsFileName = statsDir + os.path.basename(sampleFileName) + ".stats.events"
+		## determine and store statistics file name for output
+		statsFileName = join(statsDir, basename(sampleFileName) + ".stats.events")
 		statsFileNames.append(statsFileName)
 		
-		if verbose:
-			print "   Writing statistics in " + statsFileName + "\n"
-		open(statsFileName, 'w').write(\
-			str(os.path.getsize(sampleFileName)) + " Size_Feature_Entries\n" +\
-			str(nbEntries) + " Total_Entries\n" +\
-			str(nbFeatures) + " Total_Features\n" +\
-			str(1.0 * nbFeatures/nbEntries) + " Average_Features\n")
+		if reuse and isfile(statsFileName):
+			if verbose:
+				print "   Reusing statistics file for", 100.0*pct, "%"
+		else:
+			if verbose:
+				print "   Creating statistics file for", 100.0*pct, "%"
+
+			## go through file + create sample if required
+			nbEntries, nbFeatures = browseEvents(sampleFileName, pct, inputFileName, reuse,  verbose)
+			
+			## write statistics
+			if verbose:
+				print "   Writing statistics in " + statsFileName + "\n"
+			open(statsFileName, 'w').write(\
+				str(getsize(sampleFileName)) + " Size_Feature_Entries\n" +\
+				str(nbEntries) + " Total_Entries\n" +\
+				str(nbFeatures) + " Total_Features\n" +\
+				str(1.0 * nbFeatures/nbEntries) + " Average_Features\n")
 		
 	print ">> end:eventsStats"
 	return sampleFileNames, statsFileNames
 
 
-def browseEvents(sampleFileName, pct, reuse=False, inputFileName=None):
+def browseEvents(sampleFileName, pct, inputFileName=None, reuse=False, verbose=False):
 	if verbose:
 		print "\n   >> start:browseEvents"
 	## initialise variables for stats
 	nbEntries, nbFeatures = 0, 0
 	
-	## go through file
-	if pct == 1 or reuse and os.path.isfile(sampleFileName):
+	## go through the file
+	if pct == 1 or reuse and isfile(sampleFileName):
 		if verbose:
 			print "   Reusing file for", 100.0*pct, "%"
 		sampleFile = open(sampleFileName, 'r')
@@ -72,7 +87,7 @@ def browseEvents(sampleFileName, pct, reuse=False, inputFileName=None):
 				## statistics
 				nbEntries += 1
 				nbFeatures += len(entry.split()) -1
-		sampleFile.close()
+	sampleFile.close()
 		
 	if verbose:
 		print "  ", nbEntries, "entries and", nbFeatures, "features"
@@ -84,10 +99,10 @@ def bybloStats(sampleFileNames, outputDir, bybloDir, bybloParams="", reuse=False
 	print "\n>> start:bybloStats"
 	
 	## prepare for Byblo output
-	thesauriDir = os.path.join(outputDir, "thesauri/")
-	if not os.path.exists(thesauriDir):
+	thesauriDir = join(outputDir, "thesauri")
+	if not exists(thesauriDir):
 		os.makedirs(thesauriDir)
-	statsDir = os.path.join(outputDir, "stats/")
+	statsDir = join(outputDir, "stats")
 	statsFileNames = []
 	
 	#~ print "statsDir = "+statsDir
@@ -95,22 +110,31 @@ def bybloStats(sampleFileNames, outputDir, bybloDir, bybloParams="", reuse=False
 	
 	for fileName in sampleFileNames:
 		
-		## run Byblo for this sample file
-		runTime = runByblo(os.path.abspath(fileName), os.path.abspath(thesauriDir), \
-			os.path.abspath(bybloDir), bybloParams, verbose)
-		
-		## write statistics
-		thesaurusName = thesauriDir + os.path.basename(fileName)
-		statsFileName = statsDir + os.path.basename(fileName) + ".stats.byblo"
+		## determine and store statistics file name for output
+		statsFileName = join(statsDir, basename(fileName) + ".stats.byblo")
 		statsFileNames.append(statsFileName)
-		statsFile = open(statsFileName, 'w')
 		
-		for suffix in [".sims.neighbours.strings",".events.filtered",".entries.filtered"]:
-			size = os.path.getsize(thesaurusName + suffix)
-			nbLines = sum(1 for line in open(thesaurusName + suffix, 'r'))
-			statsFile.write(str(size) + " File_Size_Bytes" + suffix + '\n' +\
-				str(nbLines) + " Lines_in_file" + suffix + '\n')
-		statsFile.write(str(runTime) + " Byblo_Run_Time\n")
+		if reuse and isfile(statsFileName):
+			if verbose:
+				print "   Reusing statistics file " + statsFileName
+		else:
+			if verbose:
+				print "   Creating statistics file for " + statsFileName
+		
+			## run Byblo for this sample file
+			runTime = runByblo(abspath(fileName), abspath(thesauriDir), \
+				abspath(bybloDir), bybloParams, verbose)
+			
+			## write statistics
+			thesaurusName = join(thesauriDir, basename(fileName))
+			statsFile = open(statsFileName, 'w')
+			
+			for suffix in [".sims.neighbours.strings",".events.filtered",".entries.filtered"]:
+				size = getsize(thesaurusName + suffix)
+				nbLines = sum(1 for line in open(thesaurusName + suffix, 'r'))
+				statsFile.write(str(size) + " File_Size_Bytes" + suffix + '\n' +\
+					str(nbLines) + " Lines_in_file" + suffix + '\n')
+			statsFile.write(str(runTime) + " Byblo_Run_Time\n")
 		
 	print ">> end:bybloStats"
 	return statsFileNames
@@ -123,14 +147,14 @@ def runByblo(inputFileName, outputDir,  bybloDir, bybloParams, verbose=False):
 		print  "Output=", outputDir
 	
 	## move to BYblo directory, start timer and run it in a subprocess
-	startDir=os.path.abspath(os.getcwd())
+	startDir=abspath(os.getcwd())
 	logFile = open(os.devnull, 'w') if not verbose else None
 	os.chdir(bybloDir)
 	if verbose:
 		print "  Moved to " + os.getcwd()
 	
 	stime = datetime.datetime.now()
-	out = subprocess.call(os.path.abspath("./byblo.sh ") + " -i " + inputFileName + " -o " + outputDir +\
+	out = subprocess.call(abspath("./byblo.sh ") + " -i " + inputFileName + " -o " + outputDir +\
 		" "+ bybloParams, shell = True, stdout = logFile, stderr = logFile)
 	etime = datetime.datetime.now()
 	
@@ -144,19 +168,20 @@ def runByblo(inputFileName, outputDir,  bybloDir, bybloParams, verbose=False):
 	if(not out == 0):
 		print "   Byblo failed on input file: " + inputFileName + "\n   Fail Code: " + str(out)
 		sys.exit()
-		
-	runTime = 1.0*(etime - stime).total_seconds() #/ 3600
+	
+	runTime = 1.0*(etime - stime).seconds #/ 3600
 	if verbose:
 		print "   Run time =", runTime
 		print "   >> end:singleBybloRun \n"
 	return runTime
-	
-def generateHistograms(sampleFileNames, outputDir, verbose):
+
+
+def generateHistograms(sampleFileNames, outputDir, reuse=False, verbose=False):
 	print "\n>> start:generateHistograms "
 	
-	thesauriDir = os.path.join(outputDir, "thesauri/")
-	graphsDir = os.path.join(outputDir, "graphs/")
-	if not os.path.exists(graphsDir):
+	thesauriDir = join(outputDir, "thesauri")
+	graphsDir = join(outputDir, "graphs")
+	if not exists(graphsDir):
 		os.makedirs(graphsDir)
 	
 	#~ print "thesauriDir = "+thesauriDir
@@ -164,48 +189,76 @@ def generateHistograms(sampleFileNames, outputDir, verbose):
 	
 	for fileName in sampleFileNames:
 		for suffix in ['.entries.filtered','.events.filtered']:
-			createOccurenceHistogram(thesauriDir, os.path.basename(fileName), suffix, graphsDir)
+			fileBaseName = basename(fileName) + suffix
+			if reuse and isfile(join(graphsDir, "Occurence-histogram-" + fileBaseName + ".pdf")):
+				if verbose:
+					print "   Reusing histogram for " + fileBaseName
+					
+			else:
+				if verbose:
+					print "   Creating histogram for " + fileBaseName
+				createOccurenceHistogram(thesauriDir, fileBaseName, graphsDir)
 		
-		suffix = '.sims.neighbours'
-		createSimilarityHistogram(thesauriDir, os.path.basename(fileName), suffix, graphsDir)
+		for suffix in ['.sims.neighbours']:
+			fileBaseName = basename(fileName) + suffix
+			if reuse and isfile(join(graphsDir, "Similarity-histogram-" + fileBaseName + ".pdf")):
+				if verbose:
+					print "   Reusing histogram for " + fileBaseName
+					
+			else:
+				if verbose:
+					print "   Creating histogram for " + fileBaseName
+			createSimilarityHistogram(thesauriDir, fileBaseName, graphsDir)
 	
 	print ">> end:generateHistograms"
 
 
-def createOccurenceHistogram(directory, fileName, suffix, outputDir, verbose=False):
+def createOccurenceHistogram(directory, fileName, outputDir, verbose=False):
 	if verbose:
-		print "\n     >> start:createOccurenceHistogram "+ suffix
+		print "\n     >> start:createOccurenceHistogram "
 	
-	bins = ny.arange(1, 1000, 10)
-	values = [int( line.split()[1] ) for line in open(directory + fileName + suffix, 'r')]
-	#~ print "out = ", out
-	createHistogram("Occurence", values, bins, outputDir, fileName+suffix)
+	max, step = 1000, 10
+	counts = [0 for i in xrange(0, max/step)]
+	for line in open(join(directory, fileName), 'r'):
+		simVal = int(line.split()[1])
+		if simVal < max:
+			roundSimVal = simVal / step
+			counts[roundSimVal]  += 1 
+
+	createHistogram("Occurence", counts, max, step, outputDir, fileName)
 	
 	if verbose:
 		print "     >> end:createOccurenceHistogram\n"
 
-def createSimilarityHistogram(directory, fileName, suffix, outputDir, verbose=False):
-	if verbose:
-		print "\n     >> start:createSImilarityHistogram "+ suffix
 
-	bins = ny.arange(0.0,1.0,0.1)
-	values=[]
-	for line in open(directory + fileName + suffix,'r'):
-		values += [value for i, value in enumerate(line.split()[2:]) if i%2 == 0 ]
-	#~ print "out = ", out
-	createHistogram("Similarity", values, bins, outputDir, fileName+suffix)
+def createSimilarityHistogram(directory, fileName, outputDir, verbose=False):
+	if verbose:
+		print "\n     >> start:createSImilarityHistogram "
+
+	max, step = 1.0, 0.1
+	counts = [0 for i in xrange(int(max/step))]
+	for line in open(join(directory, fileName),'r'):
+		for i, value in enumerate(line.split()[2:]):
+			if i%2 == 0:
+				simVal = float(line.split()[i])
+				if simVal < max:
+					roundSimVal = int(simVal / step)
+					counts[roundSimVal]  += 1 
+	
+	createHistogram("Similarity", counts, max, step, outputDir, fileName)
 	
 	if verbose:
 		print "     >> end:createSimilarityHistogram\n"
 
 
-def createHistogram(label, values, bins, outputDir, fileName):
-	xlabel, ylabel = label+" values", "Frequency"
-	pl.xlabel(xlabel)
-	pl.ylabel(ylabel)
+def createHistogram(label, counts, max, step, outputDir, fileName):
+	pl.xlabel(label+" values")
+	pl.ylabel("Frequency")
 	pl.title(label+' histogram for: ' + fileName)
-	pl.hist(values, bins=bins)
-	pl.savefig(outputDir + xlabel + '-' + ylabel + '-' + fileName + '.pdf')
+	pl.bar(np.arange(0, max, step), counts, width=step)
+	pl.xticks(np.arange(0, max+step, max/10 ))
+	pl.savefig(join(outputDir, label + '-histogram-' + fileName + '.pdf'))
+	pl.close()
 
 
 def statsToDictionary(fileNames):
@@ -225,11 +278,12 @@ def statsToDictionary(fileNames):
 			finalDict[k] = (tuple(d[k] for d in dictList if k in d))
 		
 	return finalDict
+
+
+def generatePlots(dictOfPlots, outputDir, reuse=False, verbose=False, xAxis="", yAxis=""):
+	print "\n>> start:generatePlots "
 	
-def generatePlots(dictOfPlots, outputDir, verbose=False, yAxis="", xAxis=""):
-	print "\n >> start:generatePlots "
-	
-	graphsDir = os.path.join(outputDir, "graphs/")
+	graphsDir = join(outputDir, "graphs/")
 	## for a constant value on the yAxis
 	if(not yAxis == ""):
 		for key, value in dictOfPlots.iteritems():
@@ -243,35 +297,48 @@ def generatePlots(dictOfPlots, outputDir, verbose=False, yAxis="", xAxis=""):
 	## no constant value (plot everything)
 	else:
 		for key, value in dictOfPlots.iteritems():
+
 			for key2, value2 in dictOfPlots.iteritems():
 				if(not key == key2):
-					if verbose:
-						print "Plot " + key + " vs. " + key2
-					createPlot(value, value2, key, key2, graphsDir)
+					fileBaseName = key+'-'+key2
+					if reuse and isfile(join(graphsDir, fileBaseName+'.pdf')):
+						if verbose:
+							print "   Reusing plot for " + fileBaseName
+							
+					else:
+						if verbose:
+							print "   Creating plot for " + fileBaseName
+						createPlot(value, value2, key, key2, graphsDir)
 	
-	print " >> end:generatePlots"
+	print ">> end:generatePlots"
+
 
 def createPlot(x, y, xlabel, ylabel, outputDirectory):
-        fig = pl.figure(xlabel + '-' + ylabel)
-        pl.plot(x,y)
-        pl.xlabel(xlabel)
-        pl.ylabel(ylabel)
-        pl.savefig(outputDirectory + xlabel+'-'+ylabel+'.pdf')
+	pl.plot(x,y)
+	pl.xlabel(xlabel)
+	pl.ylabel(ylabel)
+	pl.savefig(join(outputDirectory, xlabel+'-'+ylabel+'.pdf'))
+	pl.close()
 
 
+def deleteOnExit(deleteList, outputDirectory, sampleFiles=[], originalInputFile=""):
+	print "\n>> start:deleteOnExit "
+	if(deleteList != []):
+		for directory in deleteList:
+			## sample files
+			if directory == "samples":
+				for file in sampleFiles:
+					if file != originalInputFile:
+						os.system("rm -r " + file)
+						if verbose:
+							print "   Deleted file " + file
+			## directories
+			else:
+				os.system("rm -r " + join(outputDirectory, directory))
+				if verbose:
+					print "   Deleted directory " + directory
+	print ">> end:deleteOnExit"
 
-"""
-def deleteOnExit():
-        ## If deleteOnExit is "True" then all files except the output are deleted
-        if(self.deleteOnExit):
-            directory = self.listdir_nohidden(self.mainDirectory)
-            for d in directory:
-                if not (d.startswith("output")):
-                    os.system("rm -r " + self.mainDirectory + d)
-
-        print "Output can be found here: " + outputDirectory
-        print "Process complete!"
-"""
 
 def print_lines(list, min=0, max=None, line_max=None, title="List"):
 	if max is None:
@@ -281,13 +348,13 @@ def print_lines(list, min=0, max=None, line_max=None, title="List"):
 	if type(list) is dict:
 		for i, key in enumerate(list.iterkeys()) :
 			if i<max:
-				print key, list[key]
+				print "   " + (key + str(list[key]))[:line_max] +  "..."
 			else:
 				break
 	else:
 		for index in range(min, max):
-			print str(list[index])[:line_max], "..."
-	print "\n"
+			print "   " + str(list[index])[:line_max] + "..."
+	print ""
 
 
 if __name__=='__main__':
@@ -306,7 +373,7 @@ if __name__=='__main__':
 	# output directory
 	parser.add_argument('-O', '--output-dir', metavar='path', nargs=1, dest='O', \
 		action='store', default=None,
-		help='output directory where "stats", "thesauri" and "graphs" sub-directories might be created '+\
+		help='output directory where sub-directories "stats", "thesauri" and "graphs" can be found'+\
 		'(default: ".")')
 	# Byblo directory
 	parser.add_argument('-B', '--Byblo-dir', metavar='path', nargs=1, dest='B', \
@@ -318,6 +385,10 @@ if __name__=='__main__':
 		action='store', default=None,
 		help='Byblo parameters, read Byblo doc for more info '+\
 		'(default: "-fef 10 -fff 10 -t 6 -Smn 0.1")')
+	# delete option (for files and directories created in the proces of the graph generation(
+	parser.add_argument('-d', '--delete', metavar='string', nargs='*', dest='delete',\
+		action='store', choices=('stats', 'thesauri', 'samples'),  
+		help='delete files or directories created in the process of the graph generation')
 	# reuse option
 	parser.add_argument('-r', '--reuse', dest='reuse', action='store_const', \
 		const=True, default=False, 
@@ -334,6 +405,8 @@ if __name__=='__main__':
 	outputDir = args.O[0] if args.O != None else "."
 	bybloDir = args.B[0] if args.B !=None else "../Byblo-2.0.1"
 	bybloParams = args.P[0] if args.P != None else "-fef 10 -fff 10 -t 6 -Smn 0.1"
+	delList = (set(args.delete) if args.delete != [] else ['stats', 'thesauri', 'samples']) \
+		if args.delete != None else []
 	reuse = args.reuse
 	verbose = args.verbose
 	
@@ -343,7 +416,7 @@ if __name__=='__main__':
 	print "***************************************************************************\n"
 	
 	## EVENTS STATS + sample file creation when necessary
-	sampleFileNames, statsFileNames = eventsStats(args.data[0], outputDir, pctList, reuse)
+	sampleFileNames, statsFileNames = eventsStats(args.data[0], outputDir, pctList, reuse, verbose)
 	if verbose:
 		print_lines(statsFileNames, title="Statistics files after feature extraction")
 	
@@ -353,19 +426,18 @@ if __name__=='__main__':
 		print_lines(statsFileNames, title="Statistics files after byblo run")
 	
 	## HISTOGRAMS
-	generateHistograms(sampleFileNames, outputDir, verbose)
+	generateHistograms(sampleFileNames, outputDir, reuse, verbose)
 	
 	## PLOTS
 	statsDict = statsToDictionary(statsFileNames)
 	if verbose:
 		print_lines(statsDict, title="Table containing the statistics")
-	generatePlots(statsDict, outputDir, verbose)
+	generatePlots(statsDict, outputDir, reuse, verbose)
 	
+	## CLEAN UP
+	deleteOnExit(delList, outputDir, sampleFileNames, args.data[0])
 	
 	etime = datetime.datetime.now()
 	print "\n>Execution took", etime-stime, "hours"
-	
-	# pause at the end
-	#raw_input()
 
 	    

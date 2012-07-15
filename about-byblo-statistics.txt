@@ -1,10 +1,6 @@
 The program is for now very basic... and close to useless.
 
 Still to do:
-- why are there several colors in some histograms?????????????????
-- verify xhat happens to the reuse option after events handling. should be reused: same data => same stats => same graphs :)
-- delete [option on set] before exiting
-- remove permissions?
 - make it runnable on Windows? [is it even possible?]
 
 To develop:
