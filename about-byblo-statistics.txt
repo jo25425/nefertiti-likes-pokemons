@@ -1,11 +1,21 @@
 The program is for now very basic... and close to useless.
 
+
 Still to do:
+MINOR >> 
 - make it runnable on Windows? [is it even possible?]
+- add a warning when illogical "reuse" option
+
+REAL WORK >> 
+- vary Byblo parameters (seems like the only tricky bit is the reassembly of appropriate dictionnaries
+from statistics files...)
+- problem with the features files...
+- ==>> information on memory usage
+
 
 To develop:
 - would very probably be a good idea to display information on the type of features that 
 were used (from bybloParams) as it obviously has an impact on the way the MAGIC parameters affect the data!
-- running time vs. occurences/types ratio???? (reflects sparsity of the data???)
+- the function determineColors (should it be coloUrs?) is ridiculous at the moment...
+- the one for times could be improved too (days & weeks)
 
-!!! Histograms for similarity not working at the moment.
