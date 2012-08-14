@@ -5,11 +5,11 @@ Still to do:
 MINOR >> 
 - make it runnable on Windows? [is it even possible?]
 - add a warning when illogical "reuse" option
+- add an option to separate graphs (so that they can be used independently)
 
 REAL WORK >> 
 - vary Byblo parameters (seems like the only tricky bit is the reassembly of appropriate dictionnaries
 from statistics files...)
-- problem with the features files...
 - ==>> information on memory usage
 
 

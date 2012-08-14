@@ -250,10 +250,10 @@ def generateStringsFiles(sampleFileNames, outputDir, bybloDir, reuse=[], verbose
 	print ">> end:generateStringsFiles"
 
 
-## Makes a graph nicer and clearer by adding a tittle, axes labels, a legend, limits on the axes (for an exact fit or a 
+## Makes a graph nicer and clearer by adding a title, axes labels, a legend, limits on the axes (for an exact fit or a 
 ## "zoom"), a scientific notation (for large numbers)
 def decorateGraph(subplot, title="", xLabel="", yLabel="", yLabelPos=None, legendPos=None, \
-	data=None, crop=False, largeX=False, largeY=False):
+	data=None, largeX=False, largeY=False):
 	## text: title, legend and axes labels
 	if title != "":
 		subplot.set_title(title, fontsize = 12, fontstyle = 'italic')
@@ -267,9 +267,8 @@ def decorateGraph(subplot, title="", xLabel="", yLabel="", yLabelPos=None, legen
 		subplot.set_ylabel(yLabel, fontsize=10)
 	## axes limits (e.g. log scale or histograms)
 	if data != None:
-		xMax = 100 if crop else max(data[0])
-		subplot.set_xlim(xmin=min(data[0]), xmax=xMax)
-		subplot.set_ylim(ymin=min(data[1]), ymax=max(data[1]))
+		subplot.set_xlim(xmin=min(data[0]), xmax=max(data[0]))
+		subplot.set_ylim(ymin=min(data[1]))
 	## scientific notation for large values
 	if largeX:
 		subplot.ticklabel_format(style='sci', scilimits=(0,0), axis='x')
@@ -283,12 +282,15 @@ def decorateGraph(subplot, title="", xLabel="", yLabel="", yLabelPos=None, legen
 def fittingMethod(xdata, ydata, method=0):
 	## default return values
 	fit, label, color = [], "", ""
-	colors = ["red", "green", "blue", "purple", "orange", "magenta", "cyan"]
+	colors = ["red", "green", "blue", "purple", "orange", "magenta", "cyan", "limegreen", "gold"]
 	
 	## fitting functions
 	powerlaw = lambda x, amp, index: amp * (x**index)
 	zipf = lambda x, a: x**(-a)/special.zetac(a)
 	diffErr = lambda p, x, y, f: (y - f(p, x))
+	quadratic = lambda p, x: p[0] * (x**np.array(2))
+	#~ nlogn = lambda  p, x: p[1] * p[0] * x * np.log(p[0] * x)
+	nlogn = lambda  a, b, x: b * a * x * np.log(a * x)
 	
 	## fitting often best done by first converting to a linear equation and then fitting to a straight line:
 	##  y = a * x^b   <=>   log(y) = log(a) + b*log(x)
@@ -360,8 +362,24 @@ def fittingMethod(xdata, ydata, method=0):
 		params = polyfit(xdata, ydata, 2)
 		print "   ["+str(method)+"] " + label + " >> parameters =", params
 		fit = polyval(params, xdata)
-		
 		return fit, label, params
+		
+	## leastsq on quadratic
+	elif method == 7:
+		label = "leastsq on quadratic"
+		pinit = [1.0]
+		out = optimize.leastsq(diffErr, pinit, args=(xdata, ydata, quadratic), full_output=1)
+		print "   ["+str(method)+"] " + label + " >> parameters =", out[0]
+		fit = quadratic(out[0], xdata)
+		return fit, label, out[0]
+	
+	## curve_fit on nlogn
+	elif method == 8:
+		label = "curve_fit on nlogn"
+		pfinal, covar = optimize.curve_fit(nlogn, xdata, ydata)
+		print "   ["+str(method)+"] " + label + " >> parameters =", pfinal
+		fit = nlogn(pfinal[0], pfinal[1], xdata)
+		return fit, label, pfinal
 
 	return fit, label, colors[method]
 
@@ -381,6 +399,7 @@ def generateHistograms(sampleFileNames, outputDir, reuse=[], verbose=False):
 	
 	for fileName in sampleFileNames:
 		for suffix in ['.entries', '.features', '.events', '.sims']:
+		#~ for suffix in ['.entries', '.events', '.sims']:
 			fileBaseName = basename(fileName) + suffix
 			if "graphs" in reuse and isfile(join(graphsDir, "Histogram-" + fileBaseName + ".pdf")):
 				if verbose:
@@ -390,21 +409,23 @@ def generateHistograms(sampleFileNames, outputDir, reuse=[], verbose=False):
 					print "   Creating histogram for " + fileBaseName + "\n"
 				
 				## create histogram with a custom step value when required
-				if suffix != '.sims':
-					#~ createSimilarityHistogram("Similarity", fileBaseName, thesauriDir, graphsDir, 0.01, verbose)
-				#~ else:
-					createOccurenceHistogram("Occurence", fileBaseName, thesauriDir, graphsDir, 1, verbose)
+				if suffix == '.sims':
+					createSimilarityHistogram("Similarity", fileBaseName, thesauriDir, graphsDir, verbose)
+				else:
+					createOccurenceHistogram("Occurence", fileBaseName, thesauriDir, graphsDir, verbose)
 	
 	print ">> end:generateHistograms"
 
 
 ## Creates a histogram showing the distribution of frequencies for the chosen element (entry, feature, event)
 ## Both normal and logarithmic scale are created, together with a (for now (very) false) model attempt
-def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, step=1, verbose=False):
-	## generate the bins
+def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=False):
+	## generate the histograms
+	XBASE, YBASE = 2, 10
+	LIMITS = [1, 2.0 ** 64]
 	reducedFileSuffix = ".filtered"
-	bins = extractRowsValues(join(thesauriDir, fileName), step, verbose)
-	reducedBins = extractRowsValues(join(thesauriDir, fileName + reducedFileSuffix), step, verbose)
+	bins, hist = extractRowsValues(join(thesauriDir, fileName), LIMITS, [XBASE, YBASE], verbose=verbose)
+	reducedBins, reducedHist = extractRowsValues(join(thesauriDir, fileName + reducedFileSuffix), LIMITS, [XBASE, YBASE], verbose=verbose)
 	
 	## figure set up
 	f, (normScale, logScale, fitNormScale, fitLogScale) = pl.subplots(4, 1)
@@ -414,29 +435,24 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, step=1, ve
 	yLabelPos = [-0.1, 0.5]
 	
 	## REPRESENT THE DATA
-	## bar chart
-	left = [i*step for i in xrange(len(bins))]
-	noThreshold = normScale.bar(left, bins, width=step, color="orange", label="No threshold")
-	withThreshold = normScale.bar(left, reducedBins, width=step, color="red", label="With threshold")
-	decorateGraph(normScale, 'Norm scale', "number of occurences", "frequency", yLabelPos, "upper right", data=(left, bins), crop=True)
-	
+	## linear bar chart of 99% of the mass
+	noThreshold = normScale.bar(bins[:-1], hist, width=bins[1:] - bins[:-1], color="orange", label="No threshold")
+	withThreshold = normScale.bar(reducedBins[:-1], reducedHist, width=reducedBins[1:] - bins[:-1], color="red", label="With threshold")
 	## log-log line
-	noThreshold = logScale.loglog(left, bins, color="orange", label="No threshold")
-	withThreshold = logScale.loglog(left, reducedBins, color="red", label="With threshold")
-	decorateGraph(logScale, 'Log scale', "number of occurences", "frequency", yLabelPos, "upper right", data=(left, bins))
+	noThreshold = logScale.loglog(bins[:-1], hist, 'x-', color="orange", label="No threshold")
+	withThreshold = logScale.loglog(reducedBins[:-1], reducedHist, 'x-', color="red", label="With threshold")
+	
+	pp = max([i for i,x in enumerate((np.cumsum(hist) / sum(hist)) < 0.99) if x])
+	decorateGraph(normScale, 'Norm scale', "number of occurences", "frequency", yLabelPos, "upper right", largeY=True)
+	decorateGraph(logScale, 'Log scale', "number of occurences", "frequency", yLabelPos, "upper right")
+	normScale.set_xlim(xmax=XBASE ** max(pp, XBASE ** 2))
 	
 	## FIT THE DATA
-	## define functions 
-	powerlaw = lambda x, amp, index: amp * (x**index)
-	zipf = lambda x, a: x**(-a)/special.zetac(a)
-	
 	## data
 	removeZeroValues = lambda L, L2: [L[i] for i in xrange(len(L)) if L[i]>0 and L2[i]>0]
-	x, y = removeZeroValues(left, bins), removeZeroValues(bins,left)
-	
+	x, y = removeZeroValues(bins[:-1], hist), removeZeroValues(hist, bins[:-1])
 	fitNormScale.fill_between(x, y, 0, color="lightgrey")
 	fitLogScale.fill_between(x, 1e-50, y, color="lightgrey")
-	
 	## fit functions
 	#!>>MODIFY HERE THE METHODS TO USE<<!#
 	methods = [1, 3, 4]
@@ -444,23 +460,25 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, step=1, ve
 		mFit, mLabel, mColor= fittingMethod(x, y, m)
 		fitNormScale.plot(x, mFit, label=mLabel, color=mColor)
 		fitLogScale.loglog(x, mFit, label=mLabel, color=mColor)
-	
-	## labels	
-	decorateGraph(fitNormScale, 'Norm scale', "number of occurences", "frequency",  yLabelPos, "upper right", data=(x, y), crop=True)
+		
+	decorateGraph(fitNormScale, 'Norm scale', "number of occurences", "frequency",  yLabelPos, "upper right", data=(x, y), largeY=True)
 	decorateGraph(fitLogScale, 'Log scale', "number of occurences", "frequency", yLabelPos, "upper right", data=(x, y))
+	fitNormScale.set_xlim(xmax=XBASE** max(pp, XBASE ** 2))
 	
 	f.savefig(join(graphsDir, 'Histogram-fit-' + fileName + '.pdf'))
 	pl.close()
 	print ""
 
-
 ## Creates a histogram showing the distribution of similarity scores that appear in a thesaurus
 ## Only normal scale (values between 0 and 1), no model
-def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, step=0.01, verbose=False):
-	## generate the bins
+def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, verbose=False):
+	## generate the histograms
+	XBASE, YBASE = 10, 10
+	LIMITS = [0, 1]
+	step = 0.01
 	reducedFileSuffix = ".neighbours"
-	bins = extractRowsValues(join(thesauriDir, fileName), step, verbose)
-	reducedBins = extractRowsValues(join(thesauriDir, fileName + reducedFileSuffix), step, verbose)
+	bins, hist = extractRowsValues(join(thesauriDir, fileName), LIMITS, [XBASE, YBASE], step, verbose)
+	reducedBins, reducedHist = extractRowsValues(join(thesauriDir, fileName + reducedFileSuffix), LIMITS, [XBASE, YBASE], step, verbose)
 	
 	## figure set up
 	f, (sims) = pl.subplots()
@@ -471,50 +489,69 @@ def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, step=0.01
 	
 	## REPRESENT THE DATA
 	## bar chart
-	left = [i*step for i in xrange(len(bins))]
-	noThreshold = sims.bar(left, bins, width=step, color="orange", label="No threshold")
-	withThreshold = sims.bar(left, reducedBins, width=step, color="red", label="With threshold")
-	decorateGraph(sims, 'Norm scale', "similarity score", "frequency", yLabelPos, "upper right")
+	noThreshold = sims.bar(bins[:-1], hist, width=bins[1:] - bins[:-1], color="orange", label="No threshold")
+	withThreshold = sims.bar(reducedBins[:-1], reducedHist, width=reducedBins[1:] - bins[:-1], color="red", label="With threshold")
+	decorateGraph(sims, 'Norm scale', "similarity score", "frequency", yLabelPos, "upper right", largeY=True)
 
 	f.savefig(join(graphsDir, 'Histogram-' + fileName + '.pdf'))
 	pl.close()
 	print ""
 	
-	
+
 ## Creates bins of width "step" using all of the values from the specified file that are relevant for the corresponding histogram
 ## @return array of bins
-def extractRowsValues(fileName, step, verbose=False):
+def extractRowsValues(fileName, limits, bases=None, step=None, verbose=False):
 	if verbose:
-		print "   >> start:extractRowsValues from " + basename(fileName)
+		print "   >> start:extractRowsValues2 from " + basename(fileName)
 	
 	## initialisation
-	bins = [0]
-	lastBin, nbLine = 0, 0
 	name = ""
+	chunk = []
+	MIN_VALUE, MAX_VALUE = limits[0], limits[1]
 	
+	if step:
+		bins = np.arange(MIN_VALUE, MAX_VALUE, step)
+	else:
+		# calculate the min and max powers
+		start_power = np.floor(np.log(MIN_VALUE) / np.log(bases[0]))
+		end_power = np.ceil(np.log(MAX_VALUE) / np.log(bases[0]))
+		#  generate a range of delimiters in log space
+		num_bins = (end_power - start_power) + 1
+		bins = np.logspace(start_power, end_power, num_bins, base=bases[0])
+		
+	hist = np.zeros(len(bins) - 1)
 	lineOffset = 0 if '.entries' in fileName or '.features' in fileName else 1
 	
 	## go through the file to increment the counts
-	for line in open(fileName+'.strings','r'):
-		nbLine += 1
+	for line in open(fileName+'.strings','r') :
 		for i, field in enumerate(line.split()[lineOffset:]):
 			## name: store to verify later
 			if i%2 == 0:
 				name = field
 			## value: unless for ___FILTERED___, determine, create (if needed) and increment bin
 			elif name != "___FILTERED___":
-				value = float(field)
-				binVal = int(value / step)
-				if lastBin < binVal:
-					## add empty bins up to needed index
-					bins, lastBin = bins + [0 for b in xrange(lastBin, binVal)], binVal
-				bins[binVal]  += 1
+				chunk.append(float(field))
+				##  Iteratively generate the histogram in 10k chunks
+				if len(chunk) == 1e5:
+					(tmp,_) = np.histogram(chunk, bins=bins)
+					hist += tmp
+					chunk[:] = []
+	
+	##  don't forget the last uncomplete chunk
+	if len(chunk) != 0:
+		(tmp,_) = np.histogram(chunk, bins=bins)
+		hist += tmp				
+
+	## slice all the empty bins of the end
+	last_idx = max([i for i,h in enumerate(hist) if h])
+	hist = hist[:last_idx+1]
+	bins = bins[:last_idx+2]
 	
 	if verbose:
-		print "      Size bins = " +  str(len(bins)) + ", total values = " + str(sum(bins)) + "."
-		print "   >> end:extractRowsValues\n"
-	return bins
-
+		print "      Size hist = " +  str(len(hist)) + ", total values = " + str(sum(hist)) + "."
+		print "   >> end:extractRowsValues2\n"
+	return bins, hist
+	
 
 ##
 ##
@@ -598,33 +635,57 @@ def createPlotInputVariationForTime(statsDictionary, outputDirectory, originalIn
 		print "   >> start:createPlotInputVariationForTime"
 	
 	## figure set up
-	f, (runTime) = pl.subplots(1, 1, sharex=True)
-	f.set_size_inches(8.3, 5.8) ## set figure size to A5
-	f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=None) ## add margins
+	f, (entries, events) = pl.subplots(2, 1)
+	f.set_size_inches(8.3, 11.7) ## set figure size to A5
+	f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.35) ## add margins
 	f.suptitle('Variation of the input file size\nImpact on run time', fontsize=14, fontweight='bold')
-	
-	numberEvents = statsDictionary["Total_Number_Of_Distinct_Events"]
 	yLabelPos = [-0.1, 0.5] 
 	
-	## BYBLO RUN TIME
-	## plot the data
+	## REPRESENT THE DATA
 	times,  timeUnit = convertTimeRange(statsDictionary["Byblo_Run_Time"])
-	runTime.plot(numberEvents, times, color='aquamarine', label="runTime", marker='o', linestyle='None')
+	numberEntries = statsDictionary["Total_Number_Of_Distinct_Entries"]
+	entries.plot(numberEntries, times, color='aquamarine', label="run time function of entries", marker='o', linestyle='None')
+	numberEvents = statsDictionary["Total_Number_Of_Distinct_Events"]
+	events.plot(numberEvents, times, color='aquamarine', label="run time function of events", marker='o', linestyle='None')
 	
-	## add a model [method 6: polyfit / polyval]
-	mFit, mLabel, mParams= fittingMethod(numberEvents, times, 6)
-	runTime.plot(numberEvents, mFit, label=mLabel, color='firebrick', linestyle='dashed')
-	nMin, nMax = min(numberEvents), max(numberEvents)
-	steps = np.arange(nMin, nMax, (nMax-nMin)/100.)
-	runTime.plot(steps, polyval(mParams, steps), label="smoothed model", color='red')
+	## FIT THE DATA
+	quadratic = lambda p, x: p[1] * ((p[0] *x)**np.array(2))
+	nlogn = lambda  p, x: p[1] * p[0] * x * np.log(p[0] * x)
+	## entries [method 6: polyfit / polyval - 2nd degree]
+	mFit, mLabel, mParams1= fittingMethod(numberEntries, times, 6)
+	entries.plot(numberEntries, mFit, label=mLabel, color='firebrick', linestyle='dashed')
+	nMin, nMax = min(numberEntries), max(numberEntries)
+	steps = np.arange(nMin, nMax, (nMax-nMin)/100.) ## for a smoother model
+	entries.plot(steps, polyval(mParams1, steps), label="smoothed model", color='red')
 	
-	decorateGraph(runTime, "", "number of distinct observed events", "time ("+timeUnit+")", \
-		yLabelPos, "lower right", largeX=True, largeY=True)
-		
+	## events [method 8: ...]
+	#~ mFit, mLabel, mParams2= fittingMethod(numberEvents, times, 8)
+	#~ events.plot(numberEvents, mFit, label=mLabel, color='firebrick', linestyle='dashed')
+	#~ nMin, nMax = min(numberEvents), max(numberEvents)
+	#~ steps = np.arange(nMin, nMax, (nMax-nMin)/100.) ## for a smoother model
+	#~ events.plot(steps, nlogn(mParams2, steps), label="smoothed model", color='red')
+	
+	decorateGraph(entries, "", "number of distinct entries", "time ("+timeUnit+")", yLabelPos, "lower right", largeX=True, largeY=True)
+	decorateGraph(events, "", "number of distinct observed events", "time ("+timeUnit+")", yLabelPos, "lower right", largeX=True, largeY=True)
+	
+	## DISPLAY APPROXIMATIONS
+	
+	## entries
+	a, b, c = mParams1
+	ratio = sum(times) / sum(numberEntries)
 	infoString = "Run time approximation:\nt(n) = " \
-		+ "%.5e" % (mParams[0])  + " x n**2 + " +  "%.5e" % (mParams[1])  + " x n + " + "%.5e" % (mParams[2]) 
-	runTime.text(0.4, 0.85, infoString, horizontalalignment='center', verticalalignment='center', \
-		transform = runTime.transAxes, fontsize=10, color="dimGrey")
+		+ "%.3f" % (a/(ratio**2))  + " x N**2 + " +  "%.3f" % (b/ratio)  + " x N + " + "%.3f" % (c) \
+		+ "\nwith N = n x " + "%.5e" % (ratio)
+	entries.text(0.4, 0.85, infoString, horizontalalignment='center', verticalalignment='center', \
+		transform = entries.transAxes, fontsize=10, color="dimGrey")
+		
+	#~ ## events
+	#~ a, b = mParams2
+	#~ infoString = "Run time approximation from events:" \
+		#~ + "\nt(n) = " + "%.5e" % (a) + " x N log(N) + " + "%.5e" % (b) \
+		#~ + "\nwith N = n x " + "%.5e" % (ratio)
+	#~ events.text(0.4, 0.85, infoString, horizontalalignment='center', verticalalignment='center', \
+		#~ transform = events.transAxes, fontsize=10, color="dimGrey")
 	
 	## save figure
 	f.savefig(join(outputDir, "graphs", 'Input-variation-time-'+basename(originalInputFile)+'.pdf'))
@@ -691,7 +752,7 @@ def determineColors(suffixes, dict, stat):
 	
 	
 ## Deletes intermediary files needed for the statistics generation when they are in the list of item types (samples, 
-## thesauri, stats) that the user specified for deletion
+## thesauri, event_stats, byblo_stats) that the user specified for deletion
 def deleteOnExit(deleteList, outputDirectory, sampleFiles=[], originalInputFile=""):
 	print "\n>> start:deleteOnExit "
 	if(deleteList != []):
@@ -754,17 +815,17 @@ if __name__=='__main__':
 		action='store', default=None,
 		help='Byblo directory, usually named "Byblo-x.x.x" '+\
 		'(default: "../Byblo-2.0.1")')
-	# BYblo parameters
+	# Byblo parameters
 	parser.add_argument('-P', '--Byblo-params', metavar='string', nargs=1, dest='P', 
 		action='store', default=None,
 		help='Byblo parameters, read Byblo doc for more info '+\
 		'(default: "-fef 10 -fff 10 -t 6 -Smn 0.1")')
-	# delete option (for files and directories created in the proces of the graph generation)
+	# delete option (for files and directories created in the process of the graph generation)
 	parser.add_argument('-d', '--delete', metavar='string', nargs='*', dest='delete',
 		action='store', choices=('samples', 'thesauri', 'stats'),  
 		help='delete specified items from "samples", "thesauri" and/or "stats" before exiting, '+\
 		' everything when none specifed (default: delete nothing)')
-	# reuse option (for files and directories created in the proces of the graph generation)
+	# reuse option (for files and directories created in the process of the graph generation)
 	parser.add_argument('-r', '--reuse', metavar='string', nargs='*', dest='reuse',
 		action='store', choices=('samples', 'events_stats', 'byblo_stats', 'graphs'),  
 		help='reuse specified items from "samples", "events_stats", "byblo_stats" and/or "graphs" during execution, '+\
@@ -778,7 +839,6 @@ if __name__=='__main__':
 	##############################################################################
 	
 	pctList = sort([p for p in args.p if p != 0 and p<=100] if args.p != None else [100])
-	print pctList
 	outputDir = args.O[0] if args.O != None else "."
 	bybloDir = args.B[0] if args.B !=None else "../Byblo-2.0.1"
 	bybloParams = args.P[0] if args.P != None else "-fef 10 -fff 10 -t 6 -Smn 0.1"
