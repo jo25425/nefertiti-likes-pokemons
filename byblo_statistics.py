@@ -20,6 +20,63 @@ from scipy import optimize, stats, special
 
 #################################################################
 
+## Produce substrings that reflect the circumstances in which files are produced
+def sizeSubstring(pct):
+	return '%' + string.replace(str(pct), '.', '_')
+def paramSubstring(str):
+	return '#' + string.replace(str, ' ', '_')
+
+## Displays Byblo help to give information about the possible parameter strings, then allows the user to choose
+## new ones
+## @return new list of parameter strings for Byblo
+def displayBybloHelp(bybloDir, bybloParams, verbose=False):
+	if verbose:
+		print "\n>> start:displayBybloHelp"
+
+	## move to Byblo directory, and run it in a subprocess
+	startDir=abspath(os.getcwd())
+	os.chdir(bybloDir)
+	if verbose:
+		print "   Moved to " + os.getcwd() + "\n"
+	out = subprocess.call(abspath("./byblo.sh ") + " --help", shell = True)
+	## fail?
+	if(out != 0 and out != 255):
+		print "   Byblo help failed.\n   Fail Code: " + str(out)
+	os.chdir(startDir)
+	if verbose:
+		print "   Moved back to " + os.getcwd()
+		
+	## offer user to change the list of parameters
+	print_lines(bybloParams, title="   The list of parameter strings to use is for now:")
+	print "   Change it? (y/n)",
+	x = None
+	while True:
+		x = raw_input()
+		if x == 'y':
+			## scan a new list of parameter strings
+			print "   Type new list (syntax: string[, string ...]).\n  ",
+			while True:
+				input = raw_input()
+				bybloParams = input.split(', ')
+				## accepted input: non-empty list of strings
+				if type(bybloParams) is list and bybloParams is not [] \
+					and len(bybloParams) == len([1 for s in bybloParams if type(s) is str]):
+					break
+				else:
+					print "   Invalid input. Syntax: string[, string ...]).\n  ",
+			break
+		elif x == 'n':
+			break
+		else:
+			print "   Invalid choice. Change it? (y/n)",
+	
+	print_lines(bybloParams, title="   The list of parameter strings to use is now:")
+	
+	if verbose:
+		print ">> end:displayBybloHelp\n"
+	return bybloParams
+
+
 ## Determines the set of sample files to generate statistics for using an original input file and a list of percentages,
 ## creates these files in the subfolder "samples" when required, then goes through all of them and writes some of 
 ## their carateristics (size, entries, events) in statistics files put in the subfolder "stats"
@@ -42,14 +99,15 @@ def eventsStats(inputFileName, outputDir, percentList=[100], reuse=[], verbose=F
 	for pct in percentList:
 		
 		## determine and store data file name for input
-		sampleFileName = join(samplesDir, basename(inputFileName) + "-%" + string.replace(str(pct), '.', '-')) \
+		sampleFileName = join(samplesDir, basename(inputFileName) + sizeSubstring(pct)) \
 			if pct != 100 else inputFileName
 		sampleFileNames.append(sampleFileName)
+		print sampleFileName
 		
 		## determine and store statistics file name for output
 		statsFileName = join(statsDir, basename(sampleFileName) + ".stats.events")
 		statsFileNames.append(statsFileName)
-		
+		print statsFileName
 		if "events_stats" in reuse and isfile(statsFileName):
 			if verbose:
 				print "   Reusing statistics file for", pct, "%"
@@ -115,7 +173,7 @@ def browseEvents(sampleFileName, pct, inputFileName=None, reuse=[], verbose=Fals
 ## Runs Byblo for each sample file / parameter string association and writes information about its behaviour (size
 ## and number of lines of result files, total run time) in new statistics files put in the subfolder "stats"
 ## @return list of statistics files
-def bybloStats(sampleFileNames, outputDir, bybloDir, bybloParams="", reuse=[], verbose=False):
+def bybloStats(sampleFileNames, outputDir, bybloDir, paramList=[], reuse=[], verbose=False):
 	print "\n>> start:bybloStats"
 	
 	## prepare for Byblo output
@@ -125,36 +183,33 @@ def bybloStats(sampleFileNames, outputDir, bybloDir, bybloParams="", reuse=[], v
 	statsDir = join(outputDir, "stats")
 	statsFileNames = []
 	
-	#~ print "statsDir = "+statsDir
-	#~ print "thesauriDir = "+thesauriDir
-	
 	for fileName in sampleFileNames:
-		
-		## determine and store statistics file name for output
-		statsFileName = join(statsDir, basename(fileName) + ".stats.byblo")
-		statsFileNames.append(statsFileName)
-		
-		if "byblo_stats" in reuse and isfile(statsFileName):
-			if verbose:
-				print "   Reusing statistics file " + basename(statsFileName)
-		else:
-			if verbose:
-				print "   Creating statistics file for " + basename(statsFileName)
-		
-			## run Byblo for this sample file
-			runTime = runByblo(abspath(fileName), abspath(thesauriDir), \
-				abspath(bybloDir), bybloParams, verbose)
+		for paramStr in paramList:
+			## determine and store statistics file name for output
+			statsFileName = join(statsDir, basename(fileName) + paramSubstring(paramStr) + ".stats.byblo")
+			statsFileNames.append(statsFileName)
 			
-			## write statistics
-			resultFileName = join(thesauriDir, basename(fileName))
-			statsFile = open(statsFileName, 'w')
+			if "byblo_stats" in reuse and isfile(statsFileName):
+				if verbose:
+					print "   Reusing statistics file " + basename(statsFileName)
+			else:
+				if verbose:
+					print "   Creating statistics file for " + basename(statsFileName)
 			
-			for suffix in [".sims.neighbours",".events.filtered",".entries.filtered"]:
-				size = getsize(resultFileName + suffix)
-				nbLines = sum(1 for line in open(resultFileName + suffix, 'r'))
-				statsFile.write(str(size) + " Size_In_Bytes_Of_File_" + suffix + '\n' +\
-					str(nbLines) + " Number_Of_Lines_In_File_" + suffix + '\n')
-			statsFile.write(str(runTime) + " Byblo_Run_Time\n")
+				## run Byblo for this sample file
+				runTime = runByblo(abspath(fileName), abspath(thesauriDir), \
+					abspath(bybloDir), paramStr, verbose)
+				
+				## write statistics
+				resultFileName = join(thesauriDir, basename(fileName) + paramSubstring(paramStr))
+				statsFile = open(statsFileName, 'w')
+				
+				for suffix in [".sims.neighbours",".events.filtered",".entries.filtered"]:
+					size = getsize(resultFileName + suffix)
+					nbLines = sum(1 for line in open(resultFileName + suffix, 'r'))
+					statsFile.write(str(size) + " Size_In_Bytes_Of_File_" + suffix + '\n' +\
+						str(nbLines) + " Number_Of_Lines_In_File_" + suffix + '\n')
+				statsFile.write(str(runTime) + " Byblo_Run_Time\n")
 		
 	print ">> end:bybloStats"
 	return statsFileNames
@@ -165,88 +220,87 @@ def bybloStats(sampleFileNames, outputDir, bybloDir, bybloParams="", reuse=[], v
 ## @return list of running times
 def runByblo(inputFileName, outputDir,  bybloDir, bybloParams, verbose=False):
 	if verbose:
-		print "\n   >> start:singleBybloRun "
-		#~ print  "Input =", inputFileName
-		#~ print  "Output=", outputDir
+		print "\n   >> start:runByblo"
 	
-	## move to BYblo directory, start timer and run it in a subprocess
+	## move to Byblo directory and temporary rename input file (so that output files names reflect the parameters used)
 	startDir=abspath(os.getcwd())
-	logFile = open(os.devnull, 'w') if not verbose else None
+	tmpInputFileName = inputFileName + paramSubstring(bybloParams)
 	os.chdir(bybloDir)
 	if verbose:
 		print "  Moved to " + os.getcwd()
+	os.system("mv " + inputFileName + " " + tmpInputFileName)
 	
+	## run Byblo in a subprocess and time its execution
+	logFile = open(os.devnull, 'w') if not verbose else None
 	stime = datetime.datetime.now()
-	out = subprocess.call(abspath("./byblo.sh ") + " -i " + inputFileName + " -o " + outputDir +\
+	out = subprocess.call(abspath("./byblo.sh ") + " -i " + tmpInputFileName + " -o " + outputDir +\
 		" "+ bybloParams, shell = True, stdout = logFile, stderr = logFile)
 	etime = datetime.datetime.now()
-	
-	## fail?
-	if(not out == 0):
-		print "   Byblo failed on input file: " + inputFileName + "\n   Fail Code: " + str(out)
-		sys.exit()
-		
-	if  logFile != None:
+	if logFIle != None:
 		logFile.close()
+	if(not out == 0):
+		print "   Byblo failed on input file: " + tmpInputFileName + "\n   Fail Code: " + str(out)
+		sys.exit()
+	
+	## move back to initial directory and give the input file its name back
 	os.chdir(startDir)
 	if verbose:
 		print "  Moved back to " + os.getcwd()
+	os.system("mv " + tmpInputFileName + " " + inputFileName)
 	
 	runTime = 1.0*(etime - stime).seconds
 	if verbose:
 		print "   Run time =", runTime
-		print "   >> end:singleBybloRun \n"
+		print "   >> end:runByblo\n"
 	return runTime
 
 
 ## Converts Byblo result files that use skip indexing so that the strings represented by the indexes are restored 
 ## (slower and heavier but better for result analysis, readability and adaptability)
-def generateStringsFiles(sampleFileNames, outputDir, bybloDir, reuse=[], verbose=False):
+def generateStringsFiles(sampleFileNames, paramList, outputDir, bybloDir, reuse=[], verbose=False):
 	print "\n>> start:generateStringsFiles"
-	
 	thesauriDir = abspath(join(outputDir, "thesauri"))
-	#~ print  "Thesauri dir =", thesauriDir			
-	#~ print  "Byblo dir =", bybloDir
 		
 	for fileName in sampleFileNames:
-		for typeSuffix in [".entries", ".features", ".events", ".sims"]:
-			inputFileName = abspath(join(thesauriDir, basename(fileName)))
-			
-			## move to Byblo directory
-			startDir=abspath(os.getcwd())
-			os.chdir(bybloDir)
-			if verbose:
-				print "\n   Moved to " + os.getcwd()
-			
-			## convert both filtered and unfiltered versions
-			for filterSuffix in (["", ".filtered"] if typeSuffix != ".sims" else [""]):
-				sourceFileName = inputFileName+typeSuffix+filterSuffix
+		for paramStr in [paramSubstring(s) for s in paramList]:
+			for typeSuffix in [".entries", ".features", ".events", ".sims"]:
+				inputFileName = abspath(join(thesauriDir, basename(fileName)))
 				
-				## ...but only if needed
-				if "byblo_stats" in reuse and isfile(sourceFileName+".strings"):
-					if verbose:
-						print "   Reusing strings output file " + basename(sourceFileName)
-				else:
-					if verbose:
-						print "   Creating strings output file " + basename(sourceFileName)
+				## move to Byblo directory
+				startDir=abspath(os.getcwd())
+				os.chdir(bybloDir)
+				if verbose:
+					print "\n   Moved to " + os.getcwd()
 				
-					logFile = open(os.devnull, 'w') if not verbose else None
+				## convert both filtered and unfiltered versions
+				for filterSuffix in (["", ".filtered"] if typeSuffix != ".sims" else [""]):
+					sourceFileName = inputFileName + paramStr + typeSuffix + filterSuffix
 					
-					out = subprocess.call(abspath("./tools.sh") + " unindex-" + typeSuffix[1:] \
-						+ " -i " + sourceFileName\
-						+ " -o " + sourceFileName + ".strings" \
-						+ (" -Xe "+inputFileName+".entry-index" if typeSuffix != ".features" else "") \
-						+ (" -Xf "+inputFileName+".feature-index" if typeSuffix != ".entries" else "") \
-						+ " -et JDBC",\
-						shell = True, stdout = logFile, stderr = logFile)
+					## ...but only if needed
+					if "byblo_stats" in reuse and isfile(sourceFileName+".strings"):
+						if verbose:
+							print "   Reusing strings output file " + basename(sourceFileName)
+					else:
+						if verbose:
+							print "   Creating strings output file " + basename(sourceFileName)
 					
-					if  logFile != None:
-						logFile.close()
-			
-			## move back to execution directory
-			os.chdir(startDir)
-			if verbose:
-				print "   Moved back to " + os.getcwd()
+						logFile = open(os.devnull, 'w') if not verbose else None
+						
+						out = subprocess.call(abspath("./tools.sh") + " unindex-" + typeSuffix[1:] \
+							+ " -i " + sourceFileName\
+							+ " -o " + sourceFileName + ".strings" \
+							+ (" -Xe "+inputFileName+paramStr+".entry-index" if typeSuffix != ".features" else "") \
+							+ (" -Xf "+inputFileName+paramStr+".feature-index" if typeSuffix != ".entries" else "") \
+							+ " -et JDBC",\
+							shell = True, stdout = logFile, stderr = logFile)
+						
+						if  logFile != None:
+							logFile.close()
+				
+				## move back to execution directory
+				os.chdir(startDir)
+				if verbose:
+					print "   Moved back to " + os.getcwd()
 	print ">> end:generateStringsFiles"
 
 
@@ -387,32 +441,30 @@ def fittingMethod(xdata, ydata, method=0):
 ## Generates histograms for Byblo result files (all sizes and parameter strings) containing counts of entries, features 
 ## and events, as well as thesauri containing similarity values, always combining filtered and unfiltered versions of the
 ## same file
-def generateHistograms(sampleFileNames, outputDir, reuse=[], verbose=False):
+def generateHistograms(sampleFileNames, paramList, outputDir, reuse=[], verbose=False):
 	print "\n>> start:generateHistograms "
 	
 	thesauriDir = join(outputDir, "thesauri")
 	graphsDir = join(outputDir, "graphs")
 	if not exists(graphsDir):
 		os.makedirs(graphsDir)
-	#~ print "thesauriDir = "+thesauriDir
-	#~ print "graphsDir = "+graphsDir
 	
 	for fileName in sampleFileNames:
-		for suffix in ['.entries', '.features', '.events', '.sims']:
-		#~ for suffix in ['.entries', '.events', '.sims']:
-			fileBaseName = basename(fileName) + suffix
-			if "graphs" in reuse and isfile(join(graphsDir, "Histogram-" + fileBaseName + ".pdf")):
-				if verbose:
-					print "   Reusing histogram for " + fileBaseName
-			else:
-				if verbose:
-					print "   Creating histogram for " + fileBaseName + "\n"
-				
-				## create histogram with a custom step value when required
-				if suffix == '.sims':
-					createSimilarityHistogram("Similarity", fileBaseName, thesauriDir, graphsDir, verbose)
+		for paramStr in [paramSubstring(s) for s in paramList]:
+			for suffix in ['.entries', '.features', '.events', '.sims']:
+				fileBaseName = basename(fileName) + paramStr + suffix
+				if "graphs" in reuse and isfile(join(graphsDir, "Histogram-" + fileBaseName + ".pdf")):
+					if verbose:
+						print "   Reusing histogram for " + fileBaseName
 				else:
-					createOccurenceHistogram("Occurence", fileBaseName, thesauriDir, graphsDir, verbose)
+					if verbose:
+						print "   Creating histogram for " + fileBaseName + "\n"
+					
+					## create histogram with a custom step value when required
+					if suffix == '.sims':
+						createSimilarityHistogram("Similarity", fileBaseName, thesauriDir, graphsDir, verbose)
+					else:
+						createOccurenceHistogram("Occurence", fileBaseName, thesauriDir, graphsDir, verbose)
 	
 	print ">> end:generateHistograms"
 
@@ -502,7 +554,7 @@ def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, verbose=F
 ## @return array of bins
 def extractRowsValues(fileName, limits, bases=None, step=None, verbose=False):
 	if verbose:
-		print "   >> start:extractRowsValues2 from " + basename(fileName)
+		print "   >> start:extractRowsValues from " + basename(fileName)
 	
 	## initialisation
 	name = ""
@@ -512,10 +564,10 @@ def extractRowsValues(fileName, limits, bases=None, step=None, verbose=False):
 	if step:
 		bins = np.arange(MIN_VALUE, MAX_VALUE, step)
 	else:
-		# calculate the min and max powers
+		## calculate the min and max powers
 		start_power = np.floor(np.log(MIN_VALUE) / np.log(bases[0]))
 		end_power = np.ceil(np.log(MAX_VALUE) / np.log(bases[0]))
-		#  generate a range of delimiters in log space
+		##  generate a range of delimiters in log space
 		num_bins = (end_power - start_power) + 1
 		bins = np.logspace(start_power, end_power, num_bins, base=bases[0])
 		
@@ -549,13 +601,13 @@ def extractRowsValues(fileName, limits, bases=None, step=None, verbose=False):
 	
 	if verbose:
 		print "      Size hist = " +  str(len(hist)) + ", total values = " + str(sum(hist)) + "."
-		print "   >> end:extractRowsValues2\n"
+		print "   >> end:extractRowsValues\n"
 	return bins, hist
 	
 
 ##
 ##
-def statsToDictionary(fileNames):
+def statsFileToDictionary(fileNames):
 	dictList = []
 	## create dictionary for stats in each file
 	for f in sorted(fileNames):
@@ -571,6 +623,39 @@ def statsToDictionary(fileNames):
 		for k in dict.iterkeys():
 			finalDict[k] = (tuple(d[k] for d in dictList if k in d))
 	return finalDict
+
+##
+##
+def generateStatsDictionaries(fileNames, pctList, paramList):
+	
+	## list of percentages used?
+	pctStrings = [sizeSubstring(p) for p in pctList]
+	print pctStrings
+	
+	## list of parameter strings used?
+	paramStrings = [paramSubstring(s) for s in paramList]
+	print paramStrings
+	
+	## input sizes varies, parameters are fixed
+	dictSizesVar = {}
+	for paramStr in paramStrings:
+		fileList = [fileName for fileName in fileNames if paramStr in fileName]
+		thisDict = statsFileToDictionary(fileList)
+		dictSizesVar[paramStr] = thisDict
+	
+	## parameters vary, input file size is fixed
+	dictParamsVar = {}
+	for pctStr in pctStrings:
+		fileList = [fileName for fileName in fileNames if pctStr in fileName]
+		thisDict = statsFileToDictionary(fileList)
+		dictParamsVar[pctStr] = thisDict
+	
+	print "\n\nDICT SIZES"
+	print_lines(dictSizesVar)
+	print "\n\nDICT PARAMS"
+	print_lines(dictParamsVar)
+	
+	return dictSizesVar, dictParamsVar
 
 
 ##
@@ -753,22 +838,13 @@ def determineColors(suffixes, dict, stat):
 	
 ## Deletes intermediary files needed for the statistics generation when they are in the list of item types (samples, 
 ## thesauri, event_stats, byblo_stats) that the user specified for deletion
-def deleteOnExit(deleteList, outputDirectory, sampleFiles=[], originalInputFile=""):
+def deleteOnExit(deleteList, outputDirectory, sampleFiles=[], originalInputFile="", verbose=False):
 	print "\n>> start:deleteOnExit "
 	if(deleteList != []):
 		for directory in deleteList:
-			## sample files
-			if directory == "samples":
-				for file in sampleFiles:
-					if file != originalInputFile:
-						os.system("rm -r " + file)
-						if verbose:
-							print "   Deleted file " + file
-			## directories
-			else:
-				os.system("rm -r " + join(outputDirectory, directory))
-				if verbose:
-					print "   Deleted directory " + directory
+			os.system("rm -r " + join(outputDirectory, directory))
+			if verbose:
+				print "   Deleted directory " + directory
 	print ">> end:deleteOnExit"
 
 
@@ -781,8 +857,11 @@ def print_lines(list, min=0, max=0, line_max=0, title="List"):
 	if type(list) is dict:
 		for i, key in enumerate(sorted(list.iterkeys())) :
 			if i<max:
-				print "   " + (key + str(list[key]))[:line_max] +  "..." \
-					if line_max != 0 and len(key + str(list[key])) > line_max else "   " + key + str(list[key])
+				if type(list[key]) is dict:
+					print_lines(list[key], title=key)
+				else:
+					print "   " + (key + str(list[key]))[:line_max] +  "..." \
+						if line_max != 0 and len(key + str(list[key])) > line_max else "   " + key + str(list[key])
 			else:
 				break
 	else:
@@ -794,7 +873,7 @@ def print_lines(list, min=0, max=0, line_max=0, title="List"):
 
 if __name__=='__main__':
 	
-	##############################################################################
+	#########################################################################
 	parser = argparse.ArgumentParser(description='Generate statistics for Byblo.')
 
 	# data file name
@@ -804,22 +883,27 @@ if __name__=='__main__':
 	# percentages of entries to take into account
 	parser.add_argument('-p', '--percentage', metavar='x', type=float, nargs='*', dest='p', 
 		action='store', default=None,
-		help='approximate percentage (]0.-100.]) of entries to keep  for a set of statistics')
+		help='list of approximate percentages (]0.-100.]) of entries to keep  for a set of statistics '+\
+		'\n(default: 100%%)')
+	# Byblo parameters
+	parser.add_argument('-P', '--Byblo-params', metavar='string', nargs='*', dest='P', 
+		action='store', default=None,
+		help='list of Byblo parameter strings consecutively passed to the script, use Byblo-help option for more info '+\
+		'(default: "-fef 10 -fff 10 -t 6 -Smn 0.1")')
+	# Byblo help option
+	parser.add_argument('-H', '--Byblo-help', dest='bybloHelp', action='store_const', 
+		const=True, default=False, 
+		help='display Byblo help, it is then possible to modify Byblo parameters (default: False)')
 	# output directory
 	parser.add_argument('-O', '--output-dir', metavar='path', nargs=1, dest='O', 
 		action='store', default=None,
-		help='output directory where sub-directories "stats", "thesauri" and "graphs" can be found'+\
+		help='output directory where sub-directories "samples", "stats", "thesauri" and "graphs" can be found'+\
 		'(default: ".")')
 	# Byblo directory
 	parser.add_argument('-B', '--Byblo-dir', metavar='path', nargs=1, dest='B', 
 		action='store', default=None,
 		help='Byblo directory, usually named "Byblo-x.x.x" '+\
 		'(default: "../Byblo-2.0.1")')
-	# Byblo parameters
-	parser.add_argument('-P', '--Byblo-params', metavar='string', nargs=1, dest='P', 
-		action='store', default=None,
-		help='Byblo parameters, read Byblo doc for more info '+\
-		'(default: "-fef 10 -fff 10 -t 6 -Smn 0.1")')
 	# delete option (for files and directories created in the process of the graph generation)
 	parser.add_argument('-d', '--delete', metavar='string', nargs='*', dest='delete',
 		action='store', choices=('samples', 'thesauri', 'stats'),  
@@ -836,49 +920,57 @@ if __name__=='__main__':
 		help='display Byblo output and statistics information for each step (default: False)')
 	
 	args = parser.parse_args()
-	##############################################################################
+	#########################################################################
 	
-	pctList = sort([p for p in args.p if p != 0 and p<=100] if args.p != None else [100])
+	pctList = sort([p for p in args.p if p > 0 and p<=100] if args.p != None else [100])
+	paramList = sort([s for s in args.P if s != ""] if args.P != None else ["-fef 10 -fff 10 -t 6 -Smn 0.1"])
+	print paramList
+	print "Byblo help: " + str(args.bybloHelp)
+	
 	outputDir = args.O[0] if args.O != None else "."
 	bybloDir = args.B[0] if args.B !=None else "../Byblo-2.0.1"
-	bybloParams = args.P[0] if args.P != None else "-fef 10 -fff 10 -t 6 -Smn 0.1"
+	
 	delList = (set(args.delete) if args.delete != [] else ['samples', 'thesauri', 'stats']) \
 		if args.delete != None else []
 	reuseList = (set(args.reuse) if args.reuse != [] else ['samples', 'events_stats', 'byblo_stats', 'graphs']) \
 		if args.reuse != None else []
-	verbose = args.verbose
 	
 	stime = datetime.datetime.now()
 	print "***************************************************************************"
 	print "BYBLO STATISTICS TOOL"
 	print "***************************************************************************\n"
 	
-	## EVENTS STATS + sample file creation when necessary
-	sampleFileNames, statsFileNames = eventsStats(args.data[0], outputDir, pctList, reuseList, verbose)
-	if verbose:
+	## BYBLO HELP for parameters
+	if args.bybloHelp:
+		displayBybloHelp(bybloDir, paramList, args.verbose)
+	
+	## EVENTS STATS + SAMPLES
+	sampleFileNames, statsFileNames = eventsStats(args.data[0], outputDir, pctList, reuseList, args.verbose)
+	if args.verbose:
 		print_lines(statsFileNames, title="Statistics files after feature extraction")
 	
 	## BYBLO STATS
-	statsFileNames += bybloStats(sampleFileNames, outputDir, bybloDir, bybloParams, reuseList, verbose)
-	if verbose:
+	statsFileNames += bybloStats(sampleFileNames, outputDir, bybloDir, paramList, reuseList, args.verbose)
+	if args.verbose:
 		print_lines(statsFileNames, title="Statistics files after byblo run")
 	
 	## FILE CONVERSION [RESTORE STRINGS]
-	generateStringsFiles(sampleFileNames, outputDir, bybloDir, reuseList, verbose)
+	generateStringsFiles(sampleFileNames, paramList, outputDir, bybloDir, reuseList, args.verbose)
 	
-	## HISTOGRAMS
-	generateHistograms(sampleFileNames, outputDir, reuseList, verbose)
+	#~ ## HISTOGRAMS
+	#~ generateHistograms(sampleFileNames, paramList, outputDir, reuseList, args.verbose)
 	
 	## PLOTS
-	statsDict = statsToDictionary(statsFileNames)
-	if verbose:
-		print_lines(statsDict, title="Table containing the statistics")
+	dictSizesVar, dictParamsVar = generateStatsDictionaries(statsFileNames, pctList, paramList)
+	if args.verbose:
+		print_lines(dictSizesVar, title="Statistics for varying sizes")
+		print_lines(dictParamsVar, title="Statistics for varying parameters")
 	
-	createPlotInputVariationForFiles(statsDict, outputDir, args.data[0])
-	createPlotInputVariationForTime(statsDict, outputDir, args.data[0])
+	#~ createPlotInputVariationForFiles(statsDict, outputDir, args.data[0])
+	#~ createPlotInputVariationForTime(statsDict, outputDir, args.data[0])
 	
 	## CLEAN UP
-	deleteOnExit(delList, outputDir, sampleFileNames, args.data[0])
+	deleteOnExit(delList, outputDir, sampleFileNames, args.data[0], args.verbose)
 	
 	etime = datetime.datetime.now()
 	print "\n>Execution took", etime-stime, "hours"

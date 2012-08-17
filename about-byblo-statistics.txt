@@ -8,8 +8,7 @@ MINOR >>
 - add an option to separate graphs (so that they can be used independently)
 
 REAL WORK >> 
-- vary Byblo parameters (seems like the only tricky bit is the reassembly of appropriate dictionnaries
-from statistics files...)
+- vary Byblo parameters (only left the plotting, structure modification and information extraction finished)
 - ==>> information on memory usage
 
 
