@@ -6,10 +6,12 @@ MINOR >>
 - make it runnable on Windows? [is it even possible?]
 - add a warning when illogical "reuse" option
 - add an option to separate graphs (so that they can be used independently)
+- only plot when something varies (lists with at least 2 elements)
+- maybe display percentage together with size in Input-vs-files plots
 
 REAL WORK >> 
-- vary Byblo parameters (only left the plotting, structure modification and information extraction finished)
-- ==>> information on memory usage
+- information on memory usage
+- models?
 
 
 To develop:

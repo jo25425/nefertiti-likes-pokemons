@@ -22,7 +22,7 @@ from scipy import optimize, stats, special
 
 ## Produce substrings that reflect the circumstances in which files are produced
 def sizeSubstring(pct):
-	return '%' + string.replace(str(pct), '.', '_')
+	return '%' + string.replace(str(pct), '.', '_') if pct != 100 else ""
 def paramSubstring(str):
 	return '#' + string.replace(str, ' ', '_')
 
@@ -236,7 +236,7 @@ def runByblo(inputFileName, outputDir,  bybloDir, bybloParams, verbose=False):
 	out = subprocess.call(abspath("./byblo.sh ") + " -i " + tmpInputFileName + " -o " + outputDir +\
 		" "+ bybloParams, shell = True, stdout = logFile, stderr = logFile)
 	etime = datetime.datetime.now()
-	if logFIle != None:
+	if logFile != None:
 		logFile.close()
 	if(not out == 0):
 		print "   Byblo failed on input file: " + tmpInputFileName + "\n   Fail Code: " + str(out)
@@ -513,11 +513,11 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 		fitNormScale.plot(x, mFit, label=mLabel, color=mColor)
 		fitLogScale.loglog(x, mFit, label=mLabel, color=mColor)
 		
-	decorateGraph(fitNormScale, 'Norm scale', "number of occurences", "frequency",  yLabelPos, "upper right", data=(x, y), largeY=True)
-	decorateGraph(fitLogScale, 'Log scale', "number of occurences", "frequency", yLabelPos, "upper right", data=(x, y))
+	decorateGraph(fitNormScale, 'Norm scale - zipfian model', "number of occurences", "frequency",  yLabelPos, "upper right", data=(x, y), largeY=True)
+	decorateGraph(fitLogScale, 'Log scale - zipfian model', "number of occurences", "frequency", yLabelPos, "upper right", data=(x, y))
 	fitNormScale.set_xlim(xmax=XBASE** max(pp, XBASE ** 2))
 	
-	f.savefig(join(graphsDir, 'Histogram-fit-' + fileName + '.pdf'))
+	f.savefig(join(graphsDir, 'Histogram-' + fileName + '.pdf'))
 	pl.close()
 	print ""
 
@@ -607,6 +607,54 @@ def extractRowsValues(fileName, limits, bases=None, step=None, verbose=False):
 
 ##
 ##
+def generatePlots(statsFileNames, paramList, pctList, fileName, outputDir, reuse=[], verbose=False):
+	print "\n>> start:generatePlots"
+	
+	graphsDir = join(outputDir, "graphs")
+	if not exists(graphsDir):
+		os.makedirs(graphsDir)
+		
+	## lists of percentages and parameter strings used
+	pctStrings = [sizeSubstring(p) for p in pctList]
+	paramStrings = [paramSubstring(s) for s in paramList]
+	
+	## create directories to hold all of the statistics information
+	sizesVarDict, paramsVarDict= generateStatsDictionaries(statsFileNames, pctStrings, paramStrings)
+	if args.verbose:
+		print_lines(sizesVarDict, title="Statistics for varying sizes")
+		print_lines(paramsVarDict, title="Statistics for varying parameters")
+	
+	## study input size variation
+	for paramStr in paramStrings:
+		for plotType in ['files', 'time']:
+			fileBaseName = basename(fileName) + paramStr
+			if "graphs" in reuse and isfile(join(graphsDir, 'Input-vs-'+plotType+'-'+ fileBaseName+'.pdf')):
+				if verbose:
+					print "   Reusing " + plotType + " plot for " + paramStr + " on " + basename(fileName)
+			else:
+				if verbose:
+					print "   Creating " + plotType + " plot for " + paramStr + " on " + basename(fileName)
+				plotFunction = createPlotInputVsFiles if plotType == "files" else createPlotInputVsTime
+				plotFunction(sizesVarDict[paramStr], outputDir, fileBaseName, args.verbose)
+	
+	## study Byblo parameters variation
+	for pctStr in pctStrings:
+		for plotType in ['files', 'time']:
+			fileBaseName = basename(fileName) + pctStr
+			if "graphs" in reuse and isfile(join(graphsDir, 'Parameters-vs-'+plotType+'-'+ fileBaseName+'.pdf')):
+				if verbose:
+					print "   Reusing plot for " + pctStr + " of " + basename(fileName)
+			else:
+				if verbose:
+					print "   Creating plot for " + pctStr + " of " + basename(fileName)
+				plotFunction = createPlotParametersVsFiles if plotType == "files" else createPlotParametersVsTime
+				plotFunction(paramList, paramsVarDict[pctStr], outputDir, fileBaseName, args.verbose)
+		
+	print ">> end:generatePlots"
+	
+	
+##
+##
 def statsFileToDictionary(fileNames):
 	dictList = []
 	## create dictionary for stats in each file
@@ -626,50 +674,38 @@ def statsFileToDictionary(fileNames):
 
 ##
 ##
-def generateStatsDictionaries(fileNames, pctList, paramList):
-	
-	## list of percentages used?
-	pctStrings = [sizeSubstring(p) for p in pctList]
-	print pctStrings
-	
-	## list of parameter strings used?
-	paramStrings = [paramSubstring(s) for s in paramList]
-	print paramStrings
-	
+def generateStatsDictionaries(fileNames, pctStrings, paramStrings):
 	## input sizes varies, parameters are fixed
-	dictSizesVar = {}
+	sizesVarDict = {}
 	for paramStr in paramStrings:
-		fileList = [fileName for fileName in fileNames if paramStr in fileName]
+		# don't forget the statistics on input files, that don't contain any parameter string (created BEFORE Byblo run)
+		fileList = [fileName for fileName in fileNames if paramStr in fileName or '#' not in fileName]
 		thisDict = statsFileToDictionary(fileList)
-		dictSizesVar[paramStr] = thisDict
+		sizesVarDict[paramStr] = thisDict
 	
 	## parameters vary, input file size is fixed
-	dictParamsVar = {}
+	paramsVarDict= {}
 	for pctStr in pctStrings:
 		fileList = [fileName for fileName in fileNames if pctStr in fileName]
 		thisDict = statsFileToDictionary(fileList)
-		dictParamsVar[pctStr] = thisDict
+		paramsVarDict[pctStr] = thisDict
 	
-	print "\n\nDICT SIZES"
-	print_lines(dictSizesVar)
-	print "\n\nDICT PARAMS"
-	print_lines(dictParamsVar)
-	
-	return dictSizesVar, dictParamsVar
+	return sizesVarDict, paramsVarDict
 
 
 ##
 ##
-def createPlotInputVariationForFiles(statsDictionary, outputDirectory, originalInputFile=""):
+def createPlotInputVsFiles(statsDictionary, outputDir, graphName="", verbose=False):
 	if verbose:
-		print "   >> start:createPlotInputVariationForFiles"
+		print "   >> start:createPlotInputVsFiles"
 	
 	## figure set up
 	f, (entries, lines, sizes) = pl.subplots(3, 1)
 	f.set_size_inches(8.3, 11.7) ## set figure size to A4
 	f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.35) ## add margins
-	f.suptitle('Variation of the input', fontsize=14, fontweight='bold')
+	f.suptitle('Variation of the input\nImpact on result files', fontsize=14, fontweight='bold')
 	sizesInputFile, sizeUnit = convertFileSize(statsDictionary["Size_In_Bytes_Of_Input_File"])
+	print sizesInputFile, sizeUnit
 	yLabelPos = [-0.1, 0.5] 
 	
 	## ENTRIES and EVENTS
@@ -707,21 +743,21 @@ def createPlotInputVariationForFiles(statsDictionary, outputDirectory, originalI
 		yLabelPos, "upper left", largeX=True)
 		
 	## save figure
-	f.savefig(join(outputDir, "graphs", 'Input-variation-files-'+basename(originalInputFile)+'.pdf'))
+	f.savefig(join(outputDir, "graphs", 'Input-vs-files-'+graphName+'.pdf'))
 	pl.close()
 	if verbose:
-		print "   >> end:createPlotInputVariationForFiles\n"
+		print "   >> end:createPlotInputVsFiles\n"
 
 
 ##
 ##
-def createPlotInputVariationForTime(statsDictionary, outputDirectory, originalInputFile=""):
+def createPlotInputVsTime(statsDictionary, outputDirectory, graphName="", verbose=False):
 	if verbose:
-		print "   >> start:createPlotInputVariationForTime"
+		print "   >> start:createPlotInputVsTime"
 	
 	## figure set up
 	f, (entries, events) = pl.subplots(2, 1)
-	f.set_size_inches(8.3, 11.7) ## set figure size to A5
+	f.set_size_inches(8.3, 11.7) ## set figure size to A4
 	f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.35) ## add margins
 	f.suptitle('Variation of the input file size\nImpact on run time', fontsize=14, fontweight='bold')
 	yLabelPos = [-0.1, 0.5] 
@@ -750,8 +786,10 @@ def createPlotInputVariationForTime(statsDictionary, outputDirectory, originalIn
 	#~ steps = np.arange(nMin, nMax, (nMax-nMin)/100.) ## for a smoother model
 	#~ events.plot(steps, nlogn(mParams2, steps), label="smoothed model", color='red')
 	
-	decorateGraph(entries, "", "number of distinct entries", "time ("+timeUnit+")", yLabelPos, "lower right", largeX=True, largeY=True)
-	decorateGraph(events, "", "number of distinct observed events", "time ("+timeUnit+")", yLabelPos, "lower right", largeX=True, largeY=True)
+	decorateGraph(entries, "Run time based on entries", "number of distinct entries", "time ("+timeUnit+")", yLabelPos, \
+		"lower right", largeX=True, largeY=True)
+	decorateGraph(events, "Run time based on events", "number of distinct observed events", "time ("+timeUnit+")", yLabelPos, \
+		"lower right", largeX=True, largeY=True)
 	
 	## DISPLAY APPROXIMATIONS
 	
@@ -773,10 +811,86 @@ def createPlotInputVariationForTime(statsDictionary, outputDirectory, originalIn
 		#~ transform = events.transAxes, fontsize=10, color="dimGrey")
 	
 	## save figure
-	f.savefig(join(outputDir, "graphs", 'Input-variation-time-'+basename(originalInputFile)+'.pdf'))
+	f.savefig(join(outputDir, "graphs", 'Input-vs-time-'+graphName+'.pdf'))
 	pl.close()
 	if verbose:
-		print "   >> end:createPlotInputVariationForTime\n"
+		print "   >> end:createPlotInputVsTime\n"
+
+
+##
+##
+def createPlotParametersVsFiles(paramList, statsDictionary, outputDirectory, graphName="", verbose=False):
+	if verbose:
+		print "   >> start:createPlotParametersVsFiles"
+	
+	## figure set up
+	f, (lines, sizes) = pl.subplots(2, 1)
+	f.set_size_inches(8.3, 11.7) ## set figure size to A4
+	f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.45, bottom=0.15) ## add margins
+	f.suptitle('Variation of the parameters\nImpact on result files', fontsize=14, fontweight='bold')
+	yLabelPos = [-0.1, 0.5] 
+	
+	## draw LINES and SIZE plots for each result file
+	suffixes = ['.entries.filtered', '.events.filtered', '.sims.neighbours']
+	colors = ['red', 'RoyalBlue', 'gold', 'MediumVioletRed', 'DarkOrange', 'Chartreuse']
+	ind = np.arange(len(paramList))
+	width = 0.5 / len(paramList)
+	## determine most appropriate unit
+	array, sizeUnit = convertFileSize([s for suffix in suffixes for s in statsDictionary["Size_In_Bytes_Of_File_"+suffix]])
+	
+	for i, (suffix, color) in enumerate(zip(suffixes, colors)):
+		linesResultFile  = convertFileSize(statsDictionary["Number_Of_Lines_In_File_"+suffix], sizeUnit)
+		lines.bar(ind+width*i, linesResultFile, width=width, align='center', color=color, label=suffix)
+		sizesResultFile = convertFileSize(statsDictionary["Size_In_Bytes_Of_File_"+suffix], sizeUnit)
+		sizes.bar(ind+width*i, sizesResultFile, width=width, align='center', color=color, label=suffix)
+		
+	decorateGraph(lines, 'Lines in the result files', "parameter string for Byblo", "number of lines", \
+		yLabelPos, "upper left", largeX=True, largeY=True)
+	decorateGraph(sizes, 'Size of the result files', "parameter string for Byblo", "size ("+sizeUnit+")", \
+		yLabelPos, "upper left", largeX=True)
+	
+	lines.set_xticks(ind+len(paramList)*width*0.5)
+	sizes.set_xticks(ind+len(paramList)*width*0.5)
+	lines.set_xticklabels(paramList, rotation=15, size='small')
+	sizes.set_xticklabels(paramList, rotation=15, size='small')
+
+	## save figure
+	f.savefig(join(outputDir, "graphs", 'Parameters-vs-files-'+graphName+'.pdf'))
+	pl.close()
+	if verbose:
+		print "   >> end:createPlotParametersVsFiles\n"
+
+
+##
+##
+def createPlotParametersVsTime(paramList, statsDictionary, outputDirectory, graphName="", verbose=False):
+	if verbose:
+		print "   >> start:createPlotParametersVsTime"
+	
+	## figure set up
+	f, (time) = pl.subplots(1, 1)
+	f.set_size_inches(8.3, 5.8) ## set figure size to A5
+	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## add margins
+	f.suptitle('Variation of the parameters\nImpact on run time', fontsize=14, fontweight='bold')
+	yLabelPos = [-0.1, 0.5] 
+	
+	## REPRESENT THE DATA
+	ind = np.arange(len(paramList))
+	width = 0.5 / len(paramList)
+	times,  timeUnit = convertTimeRange(statsDictionary["Byblo_Run_Time"])
+	time.bar(ind+width, times, width=width, align='center', color='aquamarine', label="run time on parameters")
+		
+	decorateGraph(time, "Run time based on Byblo parameters", "parameter string for Byblo", "number of lines", \
+		yLabelPos, "upper left", largeY=True)
+	
+	time.set_xticks(ind+len(paramList)*width*0.5)
+	time.set_xticklabels(paramList, rotation=15, size='small')
+
+	## save figure
+	f.savefig(join(outputDir, "graphs", 'Parameters-vs-time-'+graphName+'.pdf'))
+	pl.close()
+	if verbose:
+		print "   >> end:createPlotParametersVsFiles\n"
 
 
 ## Converts a list of file sizes to a target unit (bytes system), either specified or determined based on the average size
@@ -921,6 +1035,7 @@ if __name__=='__main__':
 	
 	args = parser.parse_args()
 	#########################################################################
+	inputFile = args.data[0]
 	
 	pctList = sort([p for p in args.p if p > 0 and p<=100] if args.p != None else [100])
 	paramList = sort([s for s in args.P if s != ""] if args.P != None else ["-fef 10 -fff 10 -t 6 -Smn 0.1"])
@@ -945,7 +1060,7 @@ if __name__=='__main__':
 		displayBybloHelp(bybloDir, paramList, args.verbose)
 	
 	## EVENTS STATS + SAMPLES
-	sampleFileNames, statsFileNames = eventsStats(args.data[0], outputDir, pctList, reuseList, args.verbose)
+	sampleFileNames, statsFileNames = eventsStats(inputFile, outputDir, pctList, reuseList, args.verbose)
 	if args.verbose:
 		print_lines(statsFileNames, title="Statistics files after feature extraction")
 	
@@ -957,20 +1072,14 @@ if __name__=='__main__':
 	## FILE CONVERSION [RESTORE STRINGS]
 	generateStringsFiles(sampleFileNames, paramList, outputDir, bybloDir, reuseList, args.verbose)
 	
-	#~ ## HISTOGRAMS
-	#~ generateHistograms(sampleFileNames, paramList, outputDir, reuseList, args.verbose)
+	## HISTOGRAMS
+	generateHistograms(sampleFileNames, paramList, outputDir, reuseList, args.verbose)
 	
 	## PLOTS
-	dictSizesVar, dictParamsVar = generateStatsDictionaries(statsFileNames, pctList, paramList)
-	if args.verbose:
-		print_lines(dictSizesVar, title="Statistics for varying sizes")
-		print_lines(dictParamsVar, title="Statistics for varying parameters")
-	
-	#~ createPlotInputVariationForFiles(statsDict, outputDir, args.data[0])
-	#~ createPlotInputVariationForTime(statsDict, outputDir, args.data[0])
+	generatePlots(statsFileNames, paramList, pctList, inputFile, outputDir, reuseList, args.verbose)
 	
 	## CLEAN UP
-	deleteOnExit(delList, outputDir, sampleFileNames, args.data[0], args.verbose)
+	deleteOnExit(delList, outputDir, sampleFileNames, inputFile, args.verbose)
 	
 	etime = datetime.datetime.now()
 	print "\n>Execution took", etime-stime, "hours"
