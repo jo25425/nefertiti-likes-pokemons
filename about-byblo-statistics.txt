@@ -5,18 +5,14 @@ Still to do:
 MINOR >> 
 - make it runnable on Windows? [is it even possible?]
 - add a warning when illogical "reuse" option
-- add an option to separate graphs (so that they can be used independently)
-- only plot when something varies (lists with at least 2 elements)
-- maybe display percentage together with size in Input-vs-files plots
+- maybe display percentage together with size in Input-vs-files plots?
 
 REAL WORK >> 
-- information on memory usage
-- models?
+- distribution models?
 
 
 To develop:
-- would very probably be a good idea to display information on the type of features that 
-were used (from bybloParams) as it obviously has an impact on the way the MAGIC parameters affect the data!
 - the function determineColors (should it be coloUrs?) is ridiculous at the moment...
 - the one for times could be improved too (days & weeks)
+- information on memory usage
 
