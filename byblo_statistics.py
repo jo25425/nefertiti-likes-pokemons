@@ -1,4 +1,32 @@
-#!/usr/bin/env python -c
+#~ !/usr/bin/env python -c
+
+#~ Copyright (c) 2012, University of Sussex
+#~ All rights reserved.
+
+#~ Redistribution and use in source and binary forms, with or without 
+#~ modification, are permitted provided that the following conditions are met:
+
+ #~ * Redistributions of source code must retain the above copyright notice, this
+   #~ list of conditions and the following disclaimer.
+
+ #~ * Redistributions in binary form must reproduce the above copyright notice, 
+   #~ this list of conditions and the following disclaimer in the documentation 
+   #~ and/or other materials provided with the distribution.
+
+ #~ * Neither the name of the University of Sussex nor the names of its 
+   #~ contributors may be used to endorse or promote products  derived from this
+   #~ software without specific prior written permission.
+
+#~ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
+#~ AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
+#~ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+#~ DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY DIRECT, 
+#~ INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#~ BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#~ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY 
+#~ OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING 
+#~ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
+#~ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import os, sys, argparse, subprocess
 import datetime, random, string
@@ -244,17 +272,19 @@ def runByblo(inputFileName, outputDir,  bybloDir, bybloParams, verbose=False):
 	out = subprocess.call(abspath("./byblo.sh ") + " -i " + tmpInputFileName + " -o " + outputDir +\
 		" "+ bybloParams, shell = True, stdout = logFile, stderr = logFile)
 	etime = datetime.datetime.now()
+	
+	## whatever the result, give the input file its name back file and close the log
+	os.system("mv " + tmpInputFileName + " " + inputFileName)
 	if logFile != None:
 		logFile.close()
 	if(not out == 0):
 		print "   Byblo failed on input file: " + tmpInputFileName + "\n   Fail Code: " + str(out)
 		sys.exit()
 	
-	## move back to initial directory and give the input file its name back
+	## move back to initial directory
 	os.chdir(startDir)
 	if verbose:
 		print "  Moved back to " + os.getcwd()
-	os.system("mv " + tmpInputFileName + " " + inputFileName)
 	
 	runTime = 1.0*(etime - stime).seconds
 	if verbose:
@@ -281,7 +311,7 @@ def generateStringsFiles(sampleFileNames, paramList, outputDir, bybloDir, reuse=
 					print "\n   Moved to " + os.getcwd()
 				
 				## convert both filtered and unfiltered versions
-				for filterSuffix in (["", ".filtered"] if typeSuffix != ".sims" else [""]):
+				for filterSuffix in (["", ".filtered"] if typeSuffix != ".sims" and isfile(inputFileName+paramStr+typeSuffix+'.filtered') else [""]):
 					sourceFileName = inputFileName + paramStr + typeSuffix + filterSuffix
 					
 					## ...but only if needed
@@ -487,19 +517,21 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 	XBASE, YBASE = 2, 10
 	LIMITS = [1, 2.0 ** 64]
 	reducedFileSuffix = ".filtered"
+	hasFiltered = isfile(join(thesauriDir, fileName + reducedFileSuffix))
 	bins, hist = extractRowsValues(join(thesauriDir, fileName), LIMITS, [XBASE, YBASE], verbose=verbose)
-	reducedBins, reducedHist = extractRowsValues(join(thesauriDir, fileName + reducedFileSuffix), LIMITS, [XBASE, YBASE], verbose=verbose)
+	if hasFiltered:
+		reducedBins, reducedHist = extractRowsValues(join(thesauriDir, fileName + reducedFileSuffix), LIMITS, [XBASE, YBASE], verbose=verbose)
 	
 	## figure set up
 	if not cut:
-		f, (normScale, logScale, fitNormScale, fitLogScale) = pl.subplots(4, 1)
+		f, (linearScale, logScale, fitLinearScale, fitLogScale) = pl.subplots(4, 1)
 		f.set_size_inches(8.3, 11.7) ## set figure size to A4
 		f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.4) ## add margins
 		f.suptitle('Occurence histogram for  ' + fileName[string.rfind(fileName, '.'):] + ' file', fontsize=14, fontweight='bold')
 	else:
 		individualPlots = [pl.subplots(1, 1) for x in xrange(4)]
 		figures = [p[0] for p in individualPlots]
-		normScale, logScale, fitNormScale, fitLogScale = [p[1] for p in individualPlots]
+		linearScale, logScale, fitLinearScale, fitLogScale = [p[1] for p in individualPlots]
 		for f in figures:
 			f.set_size_inches(8.3, 5.8) ## set figure size to A5
 			f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## add margins
@@ -509,34 +541,36 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 	
 	## REPRESENT THE DATA
 	## linear bar chart of 99% of the mass
-	noThreshold = normScale.bar(bins[:-1], hist, width=bins[1:] - bins[:-1], color="orange", label="No threshold")
-	withThreshold = normScale.bar(reducedBins[:-1], reducedHist, width=reducedBins[1:] - bins[:-1], color="red", label="With threshold")
+	noThreshold = linearScale.bar(bins[:-1], hist, width=bins[1:] - bins[:-1], color="orange", label="No threshold")
+	if hasFiltered:
+		withThreshold = linearScale.bar(reducedBins[:-1], reducedHist, width=reducedBins[1:] - bins[:-1], color="red", label="With threshold")
 	## log-log line
 	noThreshold = logScale.loglog(bins[:-1], hist, 'x-', color="orange", label="No threshold")
-	withThreshold = logScale.loglog(reducedBins[:-1], reducedHist, 'x-', color="red", label="With threshold")
+	if hasFiltered:
+		withThreshold = logScale.loglog(reducedBins[:-1], reducedHist, 'x-', color="red", label="With threshold")
 	
 	pp = max([i for i,x in enumerate((np.cumsum(hist) / sum(hist)) < 0.99) if x])
-	decorateGraph(normScale, 'Norm scale', "number of occurences", "frequency", yLabelPos, "upper right", largeY=True)
-	decorateGraph(logScale, 'Log scale', "number of occurences", "frequency", yLabelPos, "upper right")
-	normScale.set_xlim(xmax=XBASE ** max(pp, XBASE ** 2))
+	decorateGraph(linearScale, 'Linear scale', "number of occurences", "frequency", yLabelPos, "upper right" if hasFiltered else None, largeY=True)
+	decorateGraph(logScale, 'Log scale', "number of occurences", "frequency", yLabelPos, "upper right" if hasFiltered else None)
+	linearScale.set_xlim(xmax=XBASE ** max(pp, XBASE ** 2))
 	
 	## FIT THE DATA
 	## data
 	removeZeroValues = lambda L, L2: [L[i] for i in xrange(len(L)) if L[i]>0 and L2[i]>0]
 	x, y = removeZeroValues(bins[:-1], hist), removeZeroValues(hist, bins[:-1])
-	fitNormScale.fill_between(x, y, 0, color="lightgrey")
+	fitLinearScale.fill_between(x, y, 0, color="lightgrey")
 	fitLogScale.fill_between(x, 1e-50, y, color="lightgrey")
 	## fit functions
 	#!>>MODIFY HERE THE METHODS TO USE<<!#
 	methods = [1, 3, 4]
 	for m in methods:
 		mFit, mLabel, mColor= fittingMethod(x, y, m)
-		fitNormScale.plot(x, mFit, label=mLabel, color=mColor)
+		fitLinearScale.plot(x, mFit, label=mLabel, color=mColor)
 		fitLogScale.loglog(x, mFit, label=mLabel, color=mColor)
 		
-	decorateGraph(fitNormScale, 'Norm scale - zipfian model', "number of occurences", "frequency",  yLabelPos, "upper right", data=(x, y), largeY=True)
+	decorateGraph(fitLinearScale, 'LInear scale - zipfian model', "number of occurences", "frequency",  yLabelPos, "upper right", data=(x, y), largeY=True)
 	decorateGraph(fitLogScale, 'Log scale - zipfian model', "number of occurences", "frequency", yLabelPos, "upper right", data=(x, y))
-	fitNormScale.set_xlim(xmax=XBASE** max(pp, XBASE ** 2))
+	fitLinearScale.set_xlim(xmax=XBASE** max(pp, XBASE ** 2))
 	
 	if not cut:
 		f.savefig(join(graphsDir, 'Histogram-' + fileName + '.pdf'))
@@ -555,8 +589,12 @@ def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, verbose=F
 	LIMITS = [0, 1]
 	step = 0.01
 	reducedFileSuffix = ".neighbours"
+	hasFiltered = isfile(join(thesauriDir, fileName + reducedFileSuffix))
+	
 	bins, hist = extractRowsValues(join(thesauriDir, fileName), LIMITS, [XBASE, YBASE], step, verbose)
-	reducedBins, reducedHist = extractRowsValues(join(thesauriDir, fileName + reducedFileSuffix), LIMITS, [XBASE, YBASE], step, verbose)
+	if hasFiltered:
+		reducedBins, reducedHist = extractRowsValues(join(thesauriDir, fileName + reducedFileSuffix), \
+			LIMITS, [XBASE, YBASE], step, verbose)
 	
 	## figure set up
 	f, (sims) = pl.subplots()
@@ -568,8 +606,9 @@ def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, verbose=F
 	## REPRESENT THE DATA
 	## bar chart
 	noThreshold = sims.bar(bins[:-1], hist, width=bins[1:] - bins[:-1], color="orange", label="No threshold")
-	withThreshold = sims.bar(reducedBins[:-1], reducedHist, width=reducedBins[1:] - bins[:-1], color="red", label="With threshold")
-	decorateGraph(sims, 'Norm scale', "similarity score", "frequency", yLabelPos, "upper right", largeY=True)
+	if hasFiltered:
+		withThreshold = sims.bar(reducedBins[:-1], reducedHist, width=reducedBins[1:] - bins[:-1], color="red", label="With threshold")
+	decorateGraph(sims, 'LInear scale', "similarity score", "frequency", yLabelPos, "upper right" if hasFiltered else None, largeY=True)
 
 	f.savefig(join(graphsDir, 'Histogram-' + fileName + '.pdf'))
 	pl.close()
@@ -931,8 +970,8 @@ def createPlotParametersVsTime(paramList, statsDictionary, outputDirectory, grap
 	times,  timeUnit = convertTimeRange(statsDictionary["Byblo_Run_Time"])
 	time.bar(ind+width, times, width=width, align='center', color='aquamarine', label="run time on parameters")
 		
-	decorateGraph(time, "Run time based on Byblo parameters", "parameter string for Byblo", "number of lines", \
-		yLabelPos, "upper left", largeY=True)
+	decorateGraph(time, "Run time based on Byblo parameters", "parameter string for Byblo", "time ("+timeUnit+")", \
+		yLabelPos, largeY=True)
 	
 	time.set_xticks(ind+len(paramList)*width*0.5)
 	time.set_xticklabels(paramList, rotation=15, size='small')
@@ -1102,8 +1141,6 @@ if __name__=='__main__':
 		if args.delete != None else []
 	reuseList = (set(args.reuse) if args.reuse != [] else ['samples', 'events_stats', 'byblo_stats', 'graphs']) \
 		if args.reuse != None else []
-	print "cut?", args.cut
-	
 	
 	## start operations
 	stime = datetime.datetime.now()
