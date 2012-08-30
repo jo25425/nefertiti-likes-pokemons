@@ -9,10 +9,11 @@ MINOR >>
 
 REAL WORK >> 
 - distribution models?
+- linear plots and models for parameters => process parameter plots individually (yes, that means a lot of work... :) )
 
 
 To develop:
-- the function determineColors (should it be coloUrs?) is ridiculous at the moment...
+- the function determineColors (should it be coloUrs?) is ridiculous at the moment... [Really ridiculous. Should do something.]
 - the one for times could be improved too (days & weeks)
 - information on memory usage
 

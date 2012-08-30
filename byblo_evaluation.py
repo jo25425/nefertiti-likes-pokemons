@@ -28,9 +28,20 @@
 #~ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
 #~ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#~ -----------------------------------------------------------------------------
+__author__ = "Joanne Robert"
+__copyright__ = "Copyright (c) 2012, University of Sussex"
+__credits__ = ["Joanne Robert", "Hamish Morgan"]
+__license__ = "3-clause BSD"
+__version__ = "1.0.0"
+__maintainer__ = "Joanne Robert"
+__email__ = "jr317@sussex.ac.uk"
+__status__ = "Development"
+#~ -----------------------------------------------------------------------------
+
 import os, sys, nltk, time, string, argparse, math
 
-#################################################################
+
 def extract_terms(file, method="rank", k=None):
 	terms = []
 	for line in file:
@@ -146,11 +157,13 @@ def print_lines(list, min=0, max=None, line_max=None, title="List"):
 		print str(list[index])[:line_max], "..."
 	print "\n"
 	
-#################################################################
+
 
 if __name__=='__main__':
 
+	## PARSE COMMAND LINE
 	parser = argparse.ArgumentParser(description='Compare two thesauri.')
+	
 	# comparison method
 	parser.add_argument('-l', '--Lin', dest='method', action='store_const', \
 		const='Lin', default='rank', \
@@ -171,41 +184,37 @@ if __name__=='__main__':
 	parser.add_argument('files', metavar='file', type=file, nargs=2, \
 		action='store', help='files for the thesauri')
 	
+	## PROCESS PARAMETERS
 	args = parser.parse_args()
-	#############################################################
 	i = args.i[0] if args.i !=None else 0
 	k = args.k[0] if args.k !=None else None
 	n = args.n[0] if args.n !=None else None
 	
+	## start operations
 	stime = time.time()
 	print "***************************************************************************"
 	print "THESAURI COMPARISON TOOL"
 	print "***************************************************************************\n"
 
-	# read files
+	## read files
 	th1 = extract_terms(args.files[0], args.method, k)
 	th2 = extract_terms(args.files[1], args.method, k)
 	
-	# verify extracted information
+	## verify extracted information
 	print_lines(th1, max=10, line_max=75, title="\""+args.files[0].name+"\" after sort:")
 	print_lines(th2, max=10, line_max=75, title="\""+args.files[1].name+"\" after sort:")
 	
-	# test for a single target word
+	## test for a single target word
 	print "\nComparing sets at index", i
 	print "*******************************"
 	sim_score1 = neighbor_set_similarity(th1[i], th2[i], method=args.method, verbose=args.verbose)
 	print "\nSimilarity score = ", sim_score1, "\n"
 	
-	# and finally compare the pair of thesauri
+	## and finally compare the pair of thesauri
 	print "\nComparing thesauri"
 	print "******************"
 	sim_score2 = thesaurus_similarity(th1, th2, n, args.verbose)
 	print "\nSimilarity score = ", sim_score2, "\n"
 
 	etime = time.time()
-	print ">Execution took", etime-stime, "seconds"
-	
-	# pause at the end
-	raw_input()
-
-	    
+	print "\n>Execution took", etime-stime, "seconds"   
