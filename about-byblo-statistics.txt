@@ -1,6 +1,3 @@
-The program is for now very basic... and close to useless.
-
-
 Still to do:
 MINOR >> 
 - make it runnable on Windows? [is it even possible?]
@@ -8,12 +5,14 @@ MINOR >>
 - maybe display percentage together with size in Input-vs-files plots?
 
 REAL WORK >> 
-- distribution models?
-- linear plots and models for parameters => process parameter plots individually (yes, that means a lot of work... :) )
+- models for individual parameters (vs files, run time)
+- combine parameters/size in input
+- information on run time
+- add changes info
+- models for distributions
 
 
 To develop:
-- the function determineColors (should it be coloUrs?) is ridiculous at the moment... [Really ridiculous. Should do something.]
 - the one for times could be improved too (days & weeks)
 - information on memory usage
 

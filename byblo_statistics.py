@@ -57,6 +57,28 @@ from scipy import *
 from scipy import optimize, stats, special
 
 
+## custom type for non zero percentage
+def nonZeroPct(text):
+	value = float(text)
+	if not 0 < value <= 100:
+		raise argparse.ArgumentTypeError("non zero percentage expected")
+	return value
+
+## custom type for positive integer (frequency filters)
+def positiveInt(text):
+	value = int(text)
+	if not 0 <= value:
+		raise argparse.ArgumentTypeError("positive integer expected")
+	return value
+
+## custom type for float between 0 and 1 (similarity score)
+def zeroToOneFloat(text):
+	value = float(text)
+	if not 0 <= value <= 1:
+		raise argparse.ArgumentTypeError("float between zero and one expected")
+	return value
+	
+	
 ## Produces a string that gives information about size (percentage) used and can be in a file name
 ## @return formatted pct string
 def sizeSubstring(pct):
@@ -73,6 +95,33 @@ def getPctParamSubstring(name):
 	end = basename(name)
 	index = string.find(end, '%')
 	return "..." + end[index:]
+
+## 
+## @return complete name of the parameter
+def fullParamName(initials):
+	return { 'fef': 'entry frequency filter',
+			'fff': 'feature frequency filter',
+			'fvf': 'event frequency filter',
+			'smn': 'minimum similarity '
+			}[string.lower(initials)]
+
+
+##
+##
+def generateParameterStrings(fef, fff, fvf, Smn, verbose=False):
+	if verbose:
+		print "\n>> start:generateParameterStrings"
+	
+	bybloParams = []
+	if fef + fff + fvf + Smn:
+		for fefStr in ['-fef '+str(n)+' ' for n in fef] if fef else ['']:
+			for fffStr in ['-fff '+str(n)+' ' for n in fff] if fff else ['']:
+					for fvfStr in ['-fvf '+str(n)+' ' for n in fvf] if fvf else ['']:
+							for SmnStr in ['-Smn '+str(x)+' ' for x in Smn] if Smn else ['']:
+								bybloParams.append(fefStr + fffStr + fvfStr + SmnStr)
+	if verbose:
+		print ">> end:generateParameterStrings\n"
+	return bybloParams
 
 
 ## Displays Byblo help to give information about the possible parameter strings, then allows the user to choose
@@ -246,7 +295,7 @@ def bybloStats(sampleFileNames, outputDir, bybloDir, paramList=[], reuse=[], ver
 				## run Byblo for this sample file
 				runTime = runByblo(abspath(fileName), abspath(thesauriDir), \
 					abspath(bybloDir), paramStr, verbose)
-				
+					
 				## write statistics
 				resultFileName = join(thesauriDir, basename(fileName) + fullInputFileStr + paramSubstring(paramStr))
 				statsFile = open(statsFileName, 'w')
@@ -701,26 +750,27 @@ def extractRowsValues(fileName, limits, bases=None, step=None, verbose=False):
 
 ## Generates plots for the impact of changes in the way Byblo is run (input file sizes and parameter strings)
 ## Representation with either linear plots or bar charts depending on the nature of the element varying
-def generatePlots(statsFileNames, paramList, pctList, fileName, outputDir, reuse=[], verbose=False, cut=False):
-	print "\n>> start:generatePlots"
+def generatePlots(statsFileNames, paramList, paramListUser, paramListAuto, paramValuesLists,\
+	pctList, fileName, outputDir, reuse=[], verbose=False, cut=False):
 	
+	print "\n>> start:generatePlots"
 	graphsDir = join(outputDir, "graphs")
 	if not exists(graphsDir):
 		os.makedirs(graphsDir)
 		
 	## lists of percentages and parameter strings used
-	pctStrings = [sizeSubstring(p) for p in pctList]
-	paramStrings = [paramSubstring(s) for s in paramList]
+	pctSubstringsList = [sizeSubstring(p) for p in pctList]
+	paramSubstringsList = [paramSubstring(s) for s in paramList]
 	
 	## create directories to hold all of the statistics information
-	sizesVarDict, paramsVarDict= generateStatsDictionaries(statsFileNames, pctStrings, paramStrings)
-	if args.verbose:
+	sizesVarDict, paramsVarDict= generateStatsDictionaries(statsFileNames, pctSubstringsList, paramSubstringsList)
+	if verbose:
 		print_lines(sizesVarDict, title="Statistics for varying sizes")
 		print_lines(paramsVarDict, title="Statistics for varying parameters")
-	
+		
 	## study input size variation when several sizes
-	if len(pctStrings) > 1:
-		for paramStr in paramStrings:
+	if len(pctSubstringsList) > 1:
+		for paramStr in paramSubstringsList:
 			for plotType in ['files', 'time']:
 				fileBaseName = basename(fileName) + paramStr
 				if "graphs" in reuse and isfile(join(graphsDir, 'Input-vs-'+plotType+'-'+ fileBaseName+'.pdf')):
@@ -732,19 +782,42 @@ def generatePlots(statsFileNames, paramList, pctList, fileName, outputDir, reuse
 					plotFunction = createPlotInputVsFiles if plotType == "files" else createPlotInputVsTime
 					plotFunction(sizesVarDict[paramStr], outputDir, fileBaseName, verbose, cut)
 	
-	## study Byblo parameters variation when several parameter strings
-	if len(paramStrings) > 1:
-		for pctStr in pctStrings:
-			for plotType in ['files', 'time']:
-				fileBaseName = basename(fileName) + pctStr
-				if "graphs" in reuse and isfile(join(graphsDir, 'Parameters-vs-'+plotType+'-'+ fileBaseName+'.pdf')):
-					if verbose:
-						print "   Reusing " + plotType + " plot for " + pctStr
-				else:
-					if verbose:
-						print "   Creating " + plotType + " plot for " + pctStr
-					plotFunction = createPlotParametersVsFiles if plotType == "files" else createPlotParametersVsTime
-					plotFunction(paramList, paramsVarDict[pctStr], outputDir, fileBaseName, verbose, cut)
+	## study Byblo parameter strings variation when several parameter strings
+	if len(paramSubstringsList) > 1:
+		for pctStr in pctSubstringsList:
+			fileBaseName = basename(fileName) + pctStr
+			
+			## create appropriate dictionary for each graph
+			userStringsDict, singleParamDicts = decomposeDictionary(paramsVarDict[pctStr], paramList, paramListUser, paramListAuto, paramValuesLists)
+			
+			## PARAMETER STRINGS SPECIFIED BY THE USER
+			if userStringsDict:
+				for plotType in ['files', 'time']:
+					if "graphs" in reuse and isfile(join(graphsDir, 'Param-strings-vs-'+plotType+'-'+ fileBaseName+'.pdf')):
+						if verbose:
+							print "   Reusing param-strings-vs-" + plotType + " plot for " + pctStr
+					else:
+						if verbose:
+							print "   Creating param-strings-vs-" + plotType + " plot for " + pctStr
+						plotFunction = createPlotParametersVsFiles if plotType == "files" else createPlotParametersVsTime
+						plotFunction(paramListUser, userStringsDict, outputDir, fileBaseName, verbose, cut)
+				
+			## PARAMETERS VARYING INDIVIDUALLY
+			if singleParamDicts:
+				# each parameter varying...
+				for paramKey, paramValues in zip(singleParamDicts.iterkeys(), [values for values in paramValuesLists if values]):
+					# ... in each different configuration
+					for confKey in singleParamDicts[paramKey].iterkeys():
+						
+						for plotType in ['files', 'time']:
+							if "graphs" in reuse and isfile(join(graphsDir, paramKey+'-vs-'+plotType+'['+confKey+']'+'-'+ fileBaseName+'.pdf')):
+								if verbose:
+									print "   Reusing " + paramKey + "-vs-" + plotType + " plot with " + confKey+ " for  " + pctStr 
+							else:
+								if verbose:
+									print "   Creating " + paramKey + "-vs-" + plotType + " plot with " + confKey + " for " + pctStr
+								plotFunction = createPlotSingleParamVsFiles if plotType == "files" else createPlotSingleParamVsTime
+								plotFunction(paramValues, singleParamDicts[paramKey][confKey], outputDir, fileBaseName, paramKey, confKey, verbose, cut)
 		
 	print ">> end:generatePlots"
 	
@@ -755,7 +828,7 @@ def generatePlots(statsFileNames, paramList, pctList, fileName, outputDir, reuse
 def statsFileToDictionary(fileNames):
 	dictList = []
 	## create dictionary for stats in each file
-	for f in sorted(fileNames):
+	for f in fileNames:
 		d = {}
 		for line in open(f, 'r'):
 			fields = line.split()
@@ -791,15 +864,63 @@ def generateStatsDictionaries(fileNames, pctStrings, paramStrings):
 	return sizesVarDict, paramsVarDict
 
 
+##
+##
+def decomposeDictionary(mainDict, allParamStrings, paramStringsUser, paramStringsAuto, paramValuesLists):
+	## PARAMETER STRINGS SPECIFIED BY THE USER
+	userDict = {}
+	if paramStringsUser:
+		for key in mainDict.iterkeys():
+			if len(mainDict[key]) == 1:
+				userDict[key] = mainDict[key]
+			else :
+				userDict[key] = (tuple(value for value, paramStr in zip(mainDict[key], allParamStrings) if paramStr in paramStringsUser))
+	
+	## PARAMETERS VARYING INDIVIDUALLY
+	singleParamVarDicts = {}
+	if paramStringsAuto:
+		paramNames = ["fef", "fff", "fvf", "Smn"]
+		for targetValuesList, targetName in zip(paramValuesLists, paramNames):
+			if len(targetValuesList) > 1:
+				
+				## determine substrings that represent fixed settings in each configuration
+				list1, list2, list3 = [l for l in paramValuesLists if l != targetValuesList]
+				name1, name2, name3 = [n for n in paramNames if n != targetName]
+				
+				confSettings = []
+				if list1 or list2 or list3:
+					for substring1 in ['-'+name1+' '+str(n) for n in list1] if list1 else ['']:
+						for substring2 in ['-'+name2+' '+str(n) for n in list2] if list2 else ['']:
+							for substring3 in ['-'+name3+' '+str(n) for n in list3] if list3 else ['']:
+								confSettings.append([s for s in [substring1, substring2, substring3] if s != ''])
+				else:
+					confSettings.append('')
+				
+				## build a dictionary for each of these configurations
+				singleParamDict = {}
+				for settings in confSettings:
+					confDict = {}
+					for key in mainDict.iterkeys():
+						if len(mainDict[key]) == 1:
+							confDict[key] = mainDict[key]
+						else :
+							# select fields corresponding to automatically determined strings containing all of the fixed settings for this conf
+							confDict[key] = [value for value, paramStr in zip(mainDict[key], allParamStrings)\
+								if paramStr in paramStringsAuto and sum([substring in paramStr for substring in settings]) == len(settings)]
+					singleParamDict['"'+' '.join(settings)+'"'] = confDict
+				singleParamVarDicts[string.upper(targetName)] = singleParamDict
+
+	return userDict, singleParamVarDicts
+
 ## Creates plots showing the relation between the input file size and the result files obtained by running Byblo (size and # of lines)
 ## Also includes a plot for the relation between entries and events in the input
-def createPlotInputVsFiles(statsDictionary, outputDir, graphName="", verbose=False, cut=False):
+def createPlotInputVsFiles(statsDictionary, outputDirectory, graphName="", verbose=False, cut=False):
 	## figure set up
 	if not cut:
 		f, (entries, lines, sizes) = pl.subplots(3, 1)
 		f.set_size_inches(8.3, 11.7) ## set figure size to A4
 		f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.35) ## add margins
-		f.suptitle('Variation of the input\nImpact on result files', fontsize=14, fontweight='bold')
+		f.suptitle(graphName+'\nVariation of the input - impact on result files', fontsize=14, fontweight='bold')
 	else:
 		individualPlots = [pl.subplots(1, 1) for x in xrange(3)]
 		figures = [p[0] for p in individualPlots]
@@ -807,18 +928,18 @@ def createPlotInputVsFiles(statsDictionary, outputDir, graphName="", verbose=Fal
 		for f in figures:
 			f.set_size_inches(8.3, 5.8) ## set figure size to A5
 			f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## add margins
-			f.suptitle('Variation of the input\nImpact on result files', fontsize=14, fontweight='bold')
+			f.suptitle(graphName+'\nVariation of the input - impact on result files', fontsize=14, fontweight='bold')
 	sizesInputFile, sizeUnit = convertFileSize(statsDictionary["Size_In_Bytes_Of_Input_File"])
 	yLabelPos = [-0.1, 0.5] 
 	
 	## ENTRIES and EVENTS
 	numberEntries = statsDictionary["Total_Number_Of_Distinct_Entries"]
-	plot1 = entries.plot(sizesInputFile, numberEntries, color='royalblue', linestyle="solid", marker='o', label="entries", alpha=0.9)
+	plot1 = entries.plot(sizesInputFile, numberEntries, color='royalblue', linestyle="solid", marker='o', label="entries", alpha=0.6)
 	decorateGraph(entries, 'Entries and events', "size ("+sizeUnit+")", "number of entries", yLabelPos, largeY=True)
 	
 	events = entries.twinx()
 	numberEvents = statsDictionary["Total_Number_Of_Distinct_Events"]
-	plot2 = events.plot(sizesInputFile, numberEvents, color='red', linestyle="solid", marker='o', label="events", alpha=0.9)
+	plot2 = events.plot(sizesInputFile, numberEvents, color='red', linestyle="solid", marker='o', label="events", alpha=0.6)
 	decorateGraph(events, yLabel="number of events", largeY=True)
 	events.legend((plot1[0], plot2[0]), ('entries', 'events'), loc="upper left", prop={'size':8})
 	
@@ -833,13 +954,12 @@ def createPlotInputVsFiles(statsDictionary, outputDir, graphName="", verbose=Fal
 	
 	## draw LINES and SIZE plots for each result file
 	suffixes = ['.entries.filtered', '.events.filtered', '.sims.neighbours']
-	colors1 = determineColors(suffixes, statsDictionary, "Size_In_Bytes_Of_File_")
-	colors2 = determineColors(suffixes, statsDictionary, "Number_Of_Lines_In_File_")
-	for suffix, color1, color2 in zip(suffixes, colors1, colors2):
+	colors = ['RoyalBlue', 'red', 'gold', 'MediumVioletRed', 'DarkOrange', 'Chartreuse']
+	for suffix, color in zip(suffixes, colors):
 		linesResultFile = statsDictionary["Number_Of_Lines_In_File_"+suffix]
-		lines.plot(numberEvents, linesResultFile, color=color2, linestyle="dashed", marker='o', label=suffix, alpha=0.9)
+		lines.plot(numberEvents, linesResultFile, color=color, linestyle="dashed", marker='o', label=suffix, alpha=0.6)
 		sizesResultFile = convertFileSize(statsDictionary["Size_In_Bytes_Of_File_"+suffix], sizeUnit)
-		sizes.plot(numberEvents, sizesResultFile, color=color1, linestyle="solid", marker='o', label=suffix, alpha=0.9)
+		sizes.plot(numberEvents, sizesResultFile, color=color, linestyle="solid", marker='o', label=suffix, alpha=0.6)
 	decorateGraph(lines, 'Lines in the result files', "number of distinct observed events", "number of lines", \
 		yLabelPos, "upper left", largeX=True, largeY=True)
 	decorateGraph(sizes, 'Size of the result files', "number of distinct observed events", "size ("+sizeUnit+")", \
@@ -848,10 +968,10 @@ def createPlotInputVsFiles(statsDictionary, outputDir, graphName="", verbose=Fal
 	## save figure
 	
 	if not cut:
-		f.savefig(join(outputDir, "graphs", 'Input-vs-files-' + graphName + '.pdf'))
+		f.savefig(join(outputDirectory, "graphs", 'Input-vs-files-' + graphName + '.pdf'))
 	else:
 		for i, f in enumerate([p[0] for p in individualPlots]):
-			f.savefig(join(outputDir, "graphs", 'Input-vs-files-' + graphName + '-' + str(i+1) + '.pdf'))
+			f.savefig(join(outputDirectory, "graphs", 'Input-vs-files-' + graphName + '-' + str(i+1) + '.pdf'))
 	pl.close()
 	if verbose:
 		print ""
@@ -879,9 +999,9 @@ def createPlotInputVsTime(statsDictionary, outputDirectory, graphName="", verbos
 	## REPRESENT THE DATA
 	times,  timeUnit = convertTimeRange(statsDictionary["Byblo_Run_Time"])
 	numberEntries = statsDictionary["Total_Number_Of_Distinct_Entries"]
-	entries.plot(numberEntries, times, color='aquamarine', label="run time function of entries", marker='o', linestyle='None')
+	entries.plot(numberEntries, times, color='aquamarine', label="run time function of entries", marker='o', linestyle='dashed')
 	numberEvents = statsDictionary["Total_Number_Of_Distinct_Events"]
-	events.plot(numberEvents, times, color='aquamarine', label="run time function of events", marker='o', linestyle='None')
+	events.plot(numberEvents, times, color='aquamarine', label="run time function of events", marker='o', linestyle='dashed')
 	
 	## FIT THE DATA (if enough values)
 	if len(times) > 3:
@@ -935,10 +1055,10 @@ def createPlotInputVsTime(statsDictionary, outputDirectory, graphName="", verbos
 		
 	## save figure
 	if not cut:
-		f.savefig(join(outputDir, "graphs", 'Input-vs-time-' + graphName + '.pdf'))
+		f.savefig(join(outputDirectory, "graphs", 'Input-vs-time-' + graphName + '.pdf'))
 	else:
 		for i, f in enumerate([p[0] for p in individualPlots]):
-			f.savefig(join(outputDir, "graphs", 'Input-vs-time-' + graphName + '-' + str(i+1) + '.pdf'))
+			f.savefig(join(outputDirectory, "graphs", 'Input-vs-time-' + graphName + '-' + str(i+1) + '.pdf'))
 	pl.close()
 	if verbose:
 		print ""
@@ -952,7 +1072,7 @@ def createPlotParametersVsFiles(paramList, statsDictionary, outputDirectory, gra
 		f, (lines, sizes) = pl.subplots(2, 1)
 		f.set_size_inches(8.3, 11.7) ## set figure size to A4
 		f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.45, bottom=0.15) ## add margins
-		f.suptitle('Variation of the parameters\nImpact on result files', fontsize=14, fontweight='bold')
+		f.suptitle(graphName+'\nVariation of the parameters - Impact on result files', fontsize=14, fontweight='bold')
 	else:
 		individualPlots = [pl.subplots(1, 1) for x in xrange(2)]
 		figures = [p[0] for p in individualPlots]
@@ -960,12 +1080,12 @@ def createPlotParametersVsFiles(paramList, statsDictionary, outputDirectory, gra
 		for f in figures:
 			f.set_size_inches(8.3, 5.8) ## set figure size to A5
 			f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## add margins
-			f.suptitle('Variation of the parameters\nImpact on result files', fontsize=14, fontweight='bold')
+			f.suptitle(graphName+'\nVariation of the parameters - Impact on result files', fontsize=14, fontweight='bold')
 	yLabelPos = [-0.1, 0.5] 
 	
 	## draw LINES and SIZE plots for each result file
 	suffixes = ['.entries.filtered', '.events.filtered', '.sims.neighbours']
-	colors = ['red', 'RoyalBlue', 'gold', 'MediumVioletRed', 'DarkOrange', 'Chartreuse']
+	colors = ['RoyalBlue', 'red', 'gold', 'MediumVioletRed', 'DarkOrange', 'Chartreuse']
 	ind = np.arange(len(paramList))
 	width = 0.5 / len(paramList)
 	## determine most appropriate unit
@@ -989,10 +1109,10 @@ def createPlotParametersVsFiles(paramList, statsDictionary, outputDirectory, gra
 
 	## save figure
 	if not cut:
-		f.savefig(join(outputDir, "graphs", 'Parameters-vs-files-'+graphName+'.pdf'))
+		f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-files-' + graphName + '.pdf'))
 	else:
 		for i, f in enumerate([p[0] for p in individualPlots]):
-			f.savefig(join(outputDir, "graphs", 'Parameters-vs-files-' + graphName + '-' + str(i+1) + '.pdf'))
+			f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-files-' + graphName + '-' + str(i+1) + '.pdf'))
 	pl.close()
 	if verbose:
 		print ""
@@ -1005,7 +1125,7 @@ def createPlotParametersVsTime(paramList, statsDictionary, outputDirectory, grap
 	f, (time) = pl.subplots(1, 1)
 	f.set_size_inches(8.3, 5.8) ## set figure size to A5
 	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## add margins
-	f.suptitle('Variation of the parameters\nImpact on run time', fontsize=14, fontweight='bold')
+	f.suptitle(graphName+'\nVariation of the parameters - Impact on run time', fontsize=14, fontweight='bold')
 	yLabelPos = [-0.1, 0.5] 
 	
 	## REPRESENT THE DATA
@@ -1021,10 +1141,86 @@ def createPlotParametersVsTime(paramList, statsDictionary, outputDirectory, grap
 	time.set_xticklabels(paramList, rotation=15, size='small')
 
 	## save figure
-	f.savefig(join(outputDir, "graphs", 'Parameters-vs-time-' + graphName + '.pdf'))
+	f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-time-' + graphName + '.pdf'))
 	pl.close()
 	if verbose:
 		print ""
+
+
+## 
+##
+def createPlotSingleParamVsFiles(paramList, statsDictionary, outputDirectory, graphName="", \
+	paramName="", confName="", verbose=False, cut=False):
+	
+	## figure set up
+	if not cut:
+		f, (lines, sizes) = pl.subplots(2, 1)
+		f.set_size_inches(8.3, 11.7) ## set figure size to A4
+		f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.45, bottom=0.15) ## add margins
+		f.suptitle(graphName+' ['+confName+']'+'\nVariation of '+paramName+' - impact on result files', fontsize=14, fontweight='bold')
+	else:
+		individualPlots = [pl.subplots(1, 1) for x in xrange(2)]
+		figures = [p[0] for p in individualPlots]
+		lines, sizes = [p[1] for p in individualPlots]
+		for f in figures:
+			f.set_size_inches(8.3, 5.8) ## set figure size to A5
+			f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## add margins
+			f.suptitle(graphName+' ['+confName+']'+'\nVariation of '+paramName+' - impact on result files', fontsize=14, fontweight='bold')
+	yLabelPos = [-0.1, 0.5] 
+	
+	## draw LINES and SIZE plots for each result file
+	suffixes = ['.entries.filtered', '.events.filtered', '.sims.neighbours']
+	colors = ['RoyalBlue', 'red', 'gold', 'MediumVioletRed', 'DarkOrange', 'Chartreuse']
+	uselessArray, sizeUnit = convertFileSize([s for suffix in suffixes for s in statsDictionary["Size_In_Bytes_Of_File_"+suffix]]) # find most appropriate unit
+	ind = np.arange(len(paramList))
+	width = 0.5 / len(paramList)
+	for suffix, color in zip(suffixes, colors):
+		linesResultFile  = statsDictionary["Number_Of_Lines_In_File_"+suffix]
+		lines.plot(paramList, linesResultFile, color=color, linestyle="dashed", marker='o', label=suffix, alpha=0.6)
+		sizesResultFile = convertFileSize(statsDictionary["Size_In_Bytes_Of_File_"+suffix], sizeUnit)
+		sizes.plot(paramList, sizesResultFile, color=color, linestyle="solid", marker='o', label=suffix, alpha=0.6)
+		
+	decorateGraph(lines, "Lines in the result files based on "+fullParamName(paramName), string.lower(paramName)+" value", "number of lines", \
+		yLabelPos, "upper left", largeX=True, largeY=True)
+	decorateGraph(sizes, "Size of the result files based on "+fullParamName(paramName), string.lower(paramName)+" value", "size ("+sizeUnit+")", \
+		yLabelPos, "upper left", largeX=True)
+
+	## save figure
+	if not cut:
+		f.savefig(join(outputDirectory, "graphs", paramName + '-vs-files'+'['+confName+']'+'-' + graphName + '.pdf'))
+	else:
+		for i, f in enumerate([p[0] for p in individualPlots]):
+			f.savefig(join(outputDirectory, "graphs", paramName + '-vs-files'+'['+confName+']'+'-' + graphName + '-' + str(i+1) + '.pdf'))
+	pl.close()
+	if verbose:
+		print ""
+
+
+##
+##
+def createPlotSingleParamVsTime(paramList, statsDictionary, outputDirectory, graphName="", \
+	paramName="", confName="", verbose=False, cut=False):
+	
+	## figure set up
+	f, (time) = pl.subplots(1, 1)
+	f.set_size_inches(8.3, 5.8) ## set figure size to A5
+	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## add margins
+	f.suptitle(graphName+' ['+confName+']'+'\nVariation of '+paramName+' - impact on run time', fontsize=14, fontweight='bold')
+	yLabelPos = [-0.1, 0.5] 
+	
+	## REPRESENT THE DATA
+	times,  timeUnit = convertTimeRange(statsDictionary["Byblo_Run_Time"])
+	time.plot(paramList, times, color='aquamarine', label="run time function of "+paramName, marker='o', linestyle='dashed')
+		
+	decorateGraph(time, "Run time based on "+fullParamName(paramName), string.lower(paramName)+" value", "time ("+timeUnit+")", \
+		yLabelPos, largeY=True)
+
+	## save figure
+	f.savefig(join(outputDirectory, "graphs", paramName + '-vs-time'+'['+confName+']'+'-' + graphName + '.pdf'))
+	pl.close()
+	if verbose:
+		print ""
+
 
 
 ## Converts a list of file sizes to a target unit (bytes system), either specified or determined based on the average size
@@ -1063,32 +1259,13 @@ def convertTimeRange(timesList, fixedUnit=None):
 	else:
 		i = units.index(fixedUnit)
 		return timesList if i==0 else [s / 60**i for s in timesList]    
-
-
-## Merges colors used in a graph for sets that are identical (so that they can be seen as such)
-##@return list of colors to use
-## //TODO: variable list size, map color additions
-def determineColors(suffixes, dict, stat):
-	toUse = ['red', 'RoyalBlue', 'gold']
-	avail = toUse + ['MediumVioletRed', 'DarkOrange', 'Chartreuse']
-	for i1, s1 in enumerate(suffixes):
-		for i2, s2 in enumerate(suffixes):
-			if i2 > i1 and dict[stat+s1] == dict[stat+s2]:
-				## base colors => merge
-				if avail.index(toUse[i1]) < 3 and avail.index(toUse[i2]) < 3:
-					toUse[i1] = toUse[i2] = avail[i1+i2+2]
-				## at least one "complex" color => everything to grey
-				else:
-					toUse = ['grey']*3
-					return toUse
-	return toUse
 	
 	
 ## Deletes intermediary files needed for the statistics generation when they are in the list of item types (samples, 
 ## thesauri, event_stats, byblo_stats) that the user specified for deletion
 def deleteOnExit(deleteList, outputDirectory, sampleFiles=[], originalInputFile="", verbose=False):
 	print "\n>> start:deleteOnExit "
-	if(deleteList != []):
+	if(deleteList != ["nothing"]):
 		for directory in deleteList:
 			os.system("rm -r " + join(outputDirectory, directory))
 			if verbose:
@@ -1120,103 +1297,139 @@ def print_lines(list, min=0, max=0, line_max=0, title="List"):
 
 
 if __name__=='__main__':
-	
+		
 	## PARSE COMMAND LINE
-	parser = argparse.ArgumentParser(description='Generate statistics for Byblo.')
+	parser = argparse.ArgumentParser(description="Generate statistics for Byblo.", prog="byblo_statistics")
 
 	# data file name
-	parser.add_argument('data', metavar='file', nargs=1, 
-		action='store', 
+	parser.add_argument('data', metavar='file', action='store', default="",
 		help='data file containing  a feature / entry set')
 	# percentages of entries to take into account
-	parser.add_argument('-p', '--percentage', metavar='x', type=float, nargs='*', dest='p', 
-		action='store', default=None,
+	parser.add_argument('-p', '--percentage', metavar='x', type=nonZeroPct, nargs='+', dest='pctList', 
+		action='store', default=[100.],
 		help='list of approximate percentages (]0.-100.]) of entries to keep  for a set of statistics '+\
 		'\n(default: 100%%)')
+	# thresholds for the entry frequency
+	parser.add_argument('-fef', '--filter-entry-freq', metavar='x', type=positiveInt, nargs='*', dest='fef', 
+		action='store', default=[],
+		help='list of values consecutively used by Byblo as a minimum entry frequency threshold'+\
+		'\n(default: 0.0)')
+	# thresholds for the feature frequency
+	parser.add_argument('-fff', '--filter-feature-freq', metavar='x', type=positiveInt, nargs='*', dest='fff', 
+		action='store', default=[],
+		help='list of values consecutively used by Byblo as a minimum feature frequency threshold'+\
+		'\n(default: 0.0)')
+	# thresholds for the event frequency
+	parser.add_argument('-fvf', '--filter-event-freq', metavar='x', type=positiveInt, nargs='*', dest='fvf', 
+		action='store', default=[],
+		help='list of values consecutively used by Byblo as a minimum event frequency threshold'+\
+		'\n(default: 0.0)')
+	# thresholds for the similarity scores
+	parser.add_argument('-Smn', '--similarity-min', metavar='x', type=zeroToOneFloat, nargs='*', dest='Smn', 
+		action='store', default=[],
+		help='list of values consecutively used by Byblo as a minimum similarity threshold'+\
+		'\n(default: 0.0)')
 	# Byblo parameters
-	parser.add_argument('-P', '--Byblo-params', metavar='string', nargs='*', dest='P', 
-		action='store', default=None,
-		help='list of Byblo parameter strings consecutively passed to the script, use Byblo-help option for more info '+\
-		'(default: "-fef 10 -fff 10 -t 6 -Smn 0.1")')
+	parser.add_argument('-P', '--Byblo-params', metavar='string', nargs='*', dest='paramStringsUser', 
+		action='store', default=[],
+		help='list of Byblo parameter strings consecutively passed to the script (only considered as a block, no  separate study of each parameter), '+\
+		'use Byblo-help option for more info (default: "")')
 	# Byblo help option
-	parser.add_argument('-H', '--Byblo-help', dest='bybloHelp', action='store_const', 
-		const=True, default=False, 
+	parser.add_argument('-H', '--Byblo-help', dest='bybloHelp', action='store_true',
 		help='display Byblo help, it is then possible to modify Byblo parameters (default: False)')
 	# output directory
-	parser.add_argument('-O', '--output-dir', metavar='path', nargs=1, dest='O', 
-		action='store', default=None,
+	parser.add_argument('-O', '--output-dir', metavar='path', dest='outputDir', 
+		action='store', default=".",
 		help='output directory where sub-directories "samples", "stats", "thesauri" and "graphs" can be found'+\
 		'(default: ".")')
 	# Byblo directory
-	parser.add_argument('-B', '--Byblo-dir', metavar='path', nargs=1, dest='B', 
-		action='store', default=None,
+	parser.add_argument('-B', '--Byblo-dir', metavar='path', dest='bybloDir', 
+		action='store', default="../Byblo-2.0.1",
 		help='Byblo directory, usually named "Byblo-x.x.x" '+\
 		'(default: "../Byblo-2.0.1")')
 	# reuse option (for files and directories created in the process of the graph generation)
+	reuseOptions = ['samples', 'events_stats', 'byblo_stats', 'graphs']
 	parser.add_argument('-r', '--reuse', metavar='string', nargs='*', dest='reuse',
-		action='store', choices=('samples', 'events_stats', 'byblo_stats', 'graphs'),  
+		action='store', choices=reuseOptions,  default = ["nothing"],
 		help='reuse specified items from "samples", "events_stats", "byblo_stats" and/or "graphs" during execution, '+\
 		' everything when none specifed (default: reuse nothing)')
 	# delete option (for files and directories created in the process of the graph generation)
+	deleteOptions = ['samples', 'thesauri', 'stats']
 	parser.add_argument('-d', '--delete', metavar='string', nargs='*', dest='delete',
-		action='store', choices=('samples', 'thesauri', 'stats'),  
+		action='store', choices=deleteOptions, default = ["nothing"],
 		help='delete specified items from "samples", "thesauri" and/or "stats" before exiting, '+\
 		' everything when none specifed (default: delete nothing)')
 	# verbose option
-	parser.add_argument('-v', '--verbose', dest='verbose', action='store_const', 
-		const=True, default=False, 
+	parser.add_argument('-v', '--verbose', dest='verbose', action='store_true',
 		help='display Byblo output and statistics information for each step (default: False)')
 	# cut option (for graphs)
-	parser.add_argument('-c', '--cut', dest='cut', action='store_const',
-		const=True, default=False,
+	parser.add_argument('-c', '--cut', dest='cut', action='store_true',
 		help='cut graphs so that all subgraphs are in distinct files (default: False)')
 	
 	## PROCESS PARAMETERS
-	args = parser.parse_args()
-	inputFile = args.data[0]
+	a = parser.parse_args()
+	[a.pctList, a.fef, a.fff, a.fvf, a.Smn] = [sorted(set(list)) for list in [a.pctList, a.fef, a.fff, a.fvf, a.Smn] ]
+	if not a.reuse:
+		a.reuse = reuseOptions
+	if not a.delete:
+		a.delete = deleteOptions
 	
-	pctList = sort([p for p in args.p if p > 0 and p<=100] if args.p != None else [100])
-	paramList = sort([s for s in args.P if s != ""] if args.P != None else ["-fef 10 -fff 10 -t 6 -Smn 0.1"])
 	
-	outputDir = args.O[0] if args.O != None else "."
-	bybloDir = args.B[0] if args.B !=None else "../Byblo-2.0.1"
+	print "data\t", a.data
+	print "p\t", a.pctList
+	print "fef\t", a.fef
+	print "fff\t", a.fff
+	print "fvf\t", a.fvf
+	print "Smn\t", a.Smn
+	print "paramStringsUser\t", a.paramStringsUser
+	print "bybloHelp\t", a.bybloHelp
+	print "bybloDir\t", a.bybloDir
+	print  "outputDir\t", a.outputDir
+	print "reuse\t", a.reuse
+	print "delete\t", a.delete
+	print "verbose\t", a.verbose
+	print "cut\t", a.cut
+	print ""
 	
-	delList = (set(args.delete) if args.delete != [] else ['samples', 'thesauri', 'stats']) \
-		if args.delete != None else []
-	reuseList = (set(args.reuse) if args.reuse != [] else ['samples', 'events_stats', 'byblo_stats', 'graphs']) \
-		if args.reuse != None else []
 	
 	## start operations
 	stime = datetime.datetime.now()
 	print "***************************************************************************"
 	print "BYBLO STATISTICS TOOL"
 	print "***************************************************************************\n"
+
 	
-	## BYBLO HELP for parameters
-	if args.bybloHelp:
-		paramList = displayBybloHelp(bybloDir, paramList, args.verbose)
-	
+	## BYBLO HELP +  PARAMETER STRINGS
+	if a.bybloHelp:
+		a.paramStringsUser = displayBybloHelp(a.bybloDir, a.paramStringsUser, a.verbose)
+	paramStringsAuto = generateParameterStrings(a.fef, a.fff, a.fvf, a.Smn, a.verbose)
+	allParamStrings = sorted(set(a.paramStringsUser + paramStringsAuto))
+	if not allParamStrings:
+		allParamStrings.append("")
+		
 	## EVENTS STATS + SAMPLES
-	sampleFileNames, statsFileNames = eventsStats(inputFile, outputDir, pctList, reuseList, args.verbose)
-	if args.verbose:
+	sampleFileNames, statsFileNames = eventsStats(a.data, a.outputDir, a.pctList, a.reuse, a.verbose)
+	if a.verbose:
 		print_lines(statsFileNames, title="Statistics files after feature extraction")
 	
-	## BYBLO STATS
-	statsFileNames += bybloStats(sampleFileNames, outputDir, bybloDir, paramList, reuseList, args.verbose)
-	if args.verbose:
+	## BYBLO STATS (both auto and user patameter strings)
+	statsFileNames += bybloStats(sampleFileNames, a.outputDir, a.bybloDir, allParamStrings, a.reuse, a.verbose)
+	if a.verbose:
 		print_lines(statsFileNames, title="Statistics files after byblo run")
 	
 	## FILE CONVERSION [RESTORE STRINGS]
-	generateStringsFiles(sampleFileNames, paramList, outputDir, bybloDir, reuseList, args.verbose)
+	generateStringsFiles(sampleFileNames, allParamStrings, a.outputDir, a.bybloDir, a.reuse, a.verbose)
 	
 	## HISTOGRAMS
-	generateHistograms(sampleFileNames, paramList, outputDir, reuseList, args.verbose, args.cut)
+	generateHistograms(sampleFileNames, allParamStrings, a.outputDir, a.reuse, a.verbose, a.cut)
 	
 	## PLOTS
-	generatePlots(statsFileNames, paramList, pctList, inputFile, outputDir, reuseList, args.verbose, args.cut)
+	singleParameterValuesLists = [a.fef, a.fff, a.fvf, a.Smn]
+	generatePlots(statsFileNames, allParamStrings, a.paramStringsUser, paramStringsAuto, singleParameterValuesLists, \
+		a.pctList, a.data, a.outputDir, a.reuse, a.verbose, a.cut)
 	
 	## CLEAN UP
-	deleteOnExit(delList, outputDir, sampleFileNames, inputFile, args.verbose)
+	deleteOnExit(a.delete, a.outputDir, sampleFileNames, a.data, a.verbose)
 	
 	etime = datetime.datetime.now()
 	print "\n>Execution took", etime-stime, "hours"
