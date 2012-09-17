@@ -356,9 +356,9 @@ def runByblo(inputFileName, outputDir,  bybloDir, bybloParams, verbose=False):
 
 ## Converts Byblo result files that use skip indexing so that the strings represented by the indexes are restored 
 ## (slower and heavier but better for result analysis, readability and adaptability)
-def generateStringsFiles(sampleFileNames, paramList, outputDir, bybloDir, reuse=[], verbose=False):
-	print "\n>> start:generateStringsFiles"
-	thesauriDir = abspath(join(outputDir, "thesauri"))
+def generateStringsFiles(sampleFileNames, paramList, thesauriDir, bybloDir, reuse=[], verbose=False):
+	if verbose:
+		print "\n   >> start:generateStringsFiles"
 		
 	for fileName in sampleFileNames:
 		for paramStr in [paramSubstring(s) for s in paramList]:
@@ -402,7 +402,8 @@ def generateStringsFiles(sampleFileNames, paramList, outputDir, bybloDir, reuse=
 				os.chdir(startDir)
 				if verbose:
 					print "   Moved back to " + os.getcwd()
-	print ">> end:generateStringsFiles"
+	if verbose:
+		print "   >> end:generateStringsFiles"
 
 
 ## Makes a graph nicer and clearer by adding a title, axes labels, a legend, limits on the axes (for an exact fit or a 
@@ -546,13 +547,16 @@ def fittingMethod(xdata, ydata, method, initialParameters=None, verbose=False):
 ## Generates histograms for Byblo result files (all sizes and parameter strings) containing counts of entries, features 
 ## and events, as well as thesauri containing similarity values, always combining filtered and unfiltered versions of the
 ## same file
-def generateHistograms(sampleFileNames, paramList, outputDir, reuse=[], verbose=False, cut=False):
+def generateHistograms(sampleFileNames, paramList, outputDir, bybloDir, reuse=[], verbose=False, cut=False):
 	print "\n>> start:generateHistograms "
 	
 	thesauriDir = join(outputDir, "thesauri")
 	graphsDir = join(outputDir, "graphs")
 	if not exists(graphsDir):
 		os.makedirs(graphsDir)
+	
+	## file conversion (restore strings to ease comparison)
+	generateStringsFiles(sampleFileNames, paramList, thesauriDir, bybloDir, reuse, verbose)
 	
 	for fileName in sampleFileNames:
 		for paramStr in [paramSubstring(s) for s in paramList]:
@@ -841,6 +845,7 @@ def statsFileToDictionary(fileNames):
 		for k in dict.iterkeys():
 			finalDict[k] = (tuple(d[k] for d in dictList if k in d))
 	return finalDict
+
 
 ## Generates statistics dictionaries for the complete list of all statistics files by making sublists of files obtained with some common
 ## element and creating dictionaries for each of these sublists
@@ -1417,11 +1422,8 @@ if __name__=='__main__':
 	if a.verbose:
 		print_lines(statsFileNames, title="Statistics files after byblo run")
 	
-	## FILE CONVERSION [RESTORE STRINGS]
-	generateStringsFiles(sampleFileNames, allParamStrings, a.outputDir, a.bybloDir, a.reuse, a.verbose)
-	
 	## HISTOGRAMS
-	generateHistograms(sampleFileNames, allParamStrings, a.outputDir, a.reuse, a.verbose, a.cut)
+	generateHistograms(sampleFileNames, allParamStrings, a.outputDir, a.bybloDir, a.reuse, a.verbose, a.cut)
 	
 	## PLOTS
 	singleParameterValuesLists = [a.fef, a.fff, a.fvf, a.Smn]
