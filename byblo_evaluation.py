@@ -33,29 +33,34 @@ __author__ = "Joanne Robert"
 __copyright__ = "Copyright (c) 2012, University of Sussex"
 __credits__ = ["Joanne Robert", "Hamish Morgan"]
 __license__ = "3-clause BSD"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __maintainer__ = "Joanne Robert"
 __email__ = "jr317@sussex.ac.uk"
 __status__ = "Development"
 #~ -----------------------------------------------------------------------------
 
-import os, sys, nltk, time, string, argparse, math
+import time, string, argparse, math
+import nltk, os, sys
+from nltk.corpus import wordnet as wn
+from nltk.corpus import wordnet_ic as wn_ic
+from operator import itemgetter, attrgetter
 
-
-def extract_terms(file, method="rank", k=None):
+##
+##
+def extract_terms(file, method="Lin", k=None):
 	terms = []
 	for line in file:
 		fields = string.split(line, "\t")
 		
-		# reduce neighbor set if needed
+		# reduce neighbour set if needed
 		if k !=None:
 			fields = fields[:k*2+1]
 		
 		# build tuples depending on method specified
-		if method == "rank":
-			line_terms = [(fields[i], i/2) for i in xrange(1, len(fields)) if i%2 == 1]
-		else:
+		if method == "Lin":
 			line_terms = [(fields[i], float(fields[i+1])) for i in xrange(1, len(fields)) if i%2 == 1]
+		else:
+			line_terms = [(fields[i], i/2) for i in xrange(1, len(fields)) if i%2 == 1]
 			
 		line_terms.sort()
 		line_terms = [fields[0]] + line_terms
@@ -64,74 +69,154 @@ def extract_terms(file, method="rank", k=None):
 	return terms
 
 
-def neighbor_set_similarity(set1, set2, method="rank", k=None, max_sim_score=None, verbose=False):
-	sim_score, pt1, pt2 = 0, 1, 1
+##
+##
+def create_wordnet_neighbour_set(originalSet, ic, method="Lin"):
 	
-	if method == "rank":
-		# determine maximum rank distance if not passed
-		if k == None:
-			k = max(len(set1), len(set2)) - 1 # target word doesn't count	
-		# determine maximum similarity score if not passed
-		if max_sim_score == None:
-			max_sim_score = sum([i*i for i in xrange(1, k+1)])
-	else:
-		# determine maximum similarity score
-		max_sim_score = sum([set1[i][1]*set1[i][1] for i in xrange(1, len(set1))]) \
-			* sum([set2[i][1]*set2[i][1] for i in xrange(1, len(set2))])
-		max_sim_score = math.sqrt(max_sim_score)
+	## Lin's WordNet similarity function
+	lin_wordnet_sim = lambda word1, word2 : max([wn.lin_similarity(synset1, synset2, ic) \
+				for synset1 in wn.synsets(word1) \
+				for synset2 in wn.synsets(word2) \
+				if synset1.pos == synset2.pos \
+				and synset1.pos in ic and synset2.pos in ic])
+	
+	## neighbour set creation
+	word = originalSet[0]
+	set = [(neighbour, lin_wordnet_sim(word, neighbour)) 
+		for (neighbour, val) in originalSet[1:] 
+		if wn.synsets(neighbour)]
+	
+	## conversion to ranks when needed
+	if method != "Lin":
+		set.sort(key=itemgetter(1), reverse=True)
+		set = [(neighbour, rank) for rank, (neighbour, val) in enumerate(set)]
+	
+	return [word] + sorted(set)
+
+
+##
+##
+def create_wordnet_thesaurus(originalThesaurus, method="Lin"):
+	
+	ic = wn_ic.ic('ic-brown.dat')
+	#~ semcor_ic = wn_ic.ic('ic-semcor.dat')
+	return [create_wordnet_neighbour_set(set, ic, method) 
+		for set in originalThesaurus if wn.synsets(set[0])]
+
+
+##
+##
+def neighbour_set_sim_lin(set1, set2, k=None, max_sim_score=None, verbose=False):
+	sim_score, pt1, pt2 = 0, 1, 1
+	square_score = lambda x: x[1] * x[1]
+	
+	## determine maximum possible similarity score
+	max_sim_score = sum([square_score(neighbour) for neighbour in set1[1:]]) \
+		* sum([square_score(neighbour) for neighbour in set2[1:]])
+	max_sim_score = math.sqrt(max_sim_score)
+	
+	## avoid division by zero
+	if max_sim_score == 0:
+		return 0
 		
 	while pt1 < len(set1) and pt2 < len(set2) :
 		if set1[pt1][0] < set2[pt2][0]:
-				pt1 += 1
-		else:
-			if set1[pt1][0] > set2[pt2][0]:
-				pt2 += 1
+			pt1 += 1
 			
-			else:	
-				# potential neighbor present in both sets
-				if method == "rank":
-					score_product = (k - set1[pt1][1])*(k - set2[pt2][1])
-				else:
-					score_product = set1[pt1][1]*set2[pt2][1]
-				sim_score += score_product
-				
-				# what is happening?
-				if verbose:
-					print "set1[", pt1, "]", set1[pt1], ": set2[", pt2, "]", set2[pt2],  \
-					"=> ", score_product
-				
-				pt1 += 1
-				pt2 += 1
+		elif set1[pt1][0] > set2[pt2][0]:
+			pt2 += 1
+		
+		else: # potential neighbour present in both sets
+			score_product = set1[pt1][1]*set2[pt2][1]
+			sim_score += score_product
+			
+			# what is happening?
+			if verbose:
+				print "["+str(pt1)+"]"+str(set1[pt1])
+				print "["+str(pt2)+"]"+str(set2[pt2])
+				print "\t=> "+str(score_product)
+			
+			pt1 += 1
+			pt2 += 1
 			
 	return 1.0 * sim_score / max_sim_score
+
+##
+##
+def neighbour_set_sim_rank(set1, set2, k=None, max_sim_score=None, verbose=False):
+	sim_score, pt1, pt2 = 0, 1, 1
 	
-def thesaurus_similarity(th1, th2, n=None, k=None, verbose=False):
+	## determine maximum rank distance if not passed
+	if k == None:
+		k = max(len(set1), len(set2)) - 1 # target word doesn't count
+		
+	## determine maximum similarity score if not passed
+	if max_sim_score == None:
+		max_sim_score = sum([i*i for i in xrange(1, k+1)])
+		
+	## avoid division by zero
+	if max_sim_score == 0:
+		return 0
+	
+	while pt1 < len(set1) and pt2 < len(set2) :
+		if set1[pt1][0] < set2[pt2][0]:
+			pt1 += 1
+				
+		elif set1[pt1][0] > set2[pt2][0]:
+			pt2 += 1
+			
+		else: # potential neighbour present in both sets
+			score_product = (k - set1[pt1][1])*(k - set2[pt2][1])
+			sim_score += score_product
+				
+			# what is happening?
+			if verbose:
+				print "["+str(pt1)+"]"+str(set1[pt1])
+				print "["+str(pt2)+"]"+str(set2[pt2])
+				print "\t=> "+str(score_product)
+			
+			pt1 += 1
+			pt2 += 1
+			
+	return 1.0 * sim_score / max_sim_score
+
+
+##
+##
+def thesaurus_sim(th, method="rank", n=None, k=None, verbose=False):
+	th1, th2 = th[0], th[1]
 	global_sim_score, pt1, pt2 = 0, 0, 0
 	fixed_k = (k != None)
+	neighbour_set_sim = {
+		'Lin'	: neighbour_set_sim_lin,
+		'rank': neighbour_set_sim_rank,
+	}[method]
 	
-	# determine maximum thesaurus size if not passed
-	# (n allows comparison on a subset)
+	## determine maximum thesaurus size if not passed (n allows comparison on a subset)
 	if n == None:
 		n = max(len(th1), len(th2))
-	print "\n# of entries to compare = ", n
+		
+	## avoid division by zero
+	if n == 0:
+		return 0
 	
-	# determine a possible maximum rank distance if not passed
+	## determine a possible maximum rank distance if not passed
 	if k == None:
 		k = len(th1[0]) - 1
 	
-	# and a possible maximum neighbor set similarity score
-	# (to avoid unneccessary computations of unchanged values)
+	## and a possible maximum neighbour set similarity score
+	## (to avoid unneccessary computations of unchanged values)
 	max_sim_score = sum([i*i for i in xrange(1, k+1)])
 	
 	while pt1 < n and pt2 < n and pt1 < len(th1) and pt2 < len(th2) :
 		
-		if th1[pt1][0] == th2[pt2][0]:
-			# target word present in both sets
+		if th1[pt1][0] == th2[pt2][0]: # target word present in both sets
 			l1, l2 = len(th1[pt1])-1, len(th2[pt2])-1
+			
 			if fixed_k and k <= l1 and k <= l2 or k == l1 == l2 :
-				set_sim = neighbor_set_similarity(th1[pt1], th2[pt2], k, max_sim_score)
+				set_sim = neighbour_set_sim(th1[pt1], th2[pt2], k, max_sim_score)
 			else:
-				set_sim = neighbor_set_similarity(th1[pt1], th2[pt2])
+				set_sim = neighbour_set_sim(th1[pt1], th2[pt2])
 			global_sim_score += set_sim
 			
 			# what is happening?
@@ -141,14 +226,15 @@ def thesaurus_similarity(th1, th2, n=None, k=None, verbose=False):
 			
 			pt1 += 1
 			pt2 += 1
+			
+		elif th1[pt1][0] < th2[pt2][0]:
+			pt1 += 1
 		else:
-			if th1[pt1][0] < th2[pt2][0]:
-				pt1 += 1
-			else:
-				pt2 += 1
+			pt2 += 1
 	return 1.0 * global_sim_score / n
 	
 	
+## Prints an array with customizable start, end, line length and title
 def print_lines(list, min=0, max=None, line_max=None, title="List"):
 	if max is None:
 		max = len(list)
@@ -163,32 +249,53 @@ if __name__=='__main__':
 
 	## PARSE COMMAND LINE
 	parser = argparse.ArgumentParser(description='Compare two thesauri.')
+	subparsers = parser.add_subparsers()
 	
-	# comparison method
-	parser.add_argument('-l', '--Lin', dest='method', action='store_const', \
-		const='Lin', default='rank', \
-		help='method used to calculate the similarity between two neighbor sets')
-	# test index
-	parser.add_argument('-i', '--test-index', type=int, nargs=1, dest='i', \
-		action='store', default=None)
-	# fixed maximum rank distance
-	parser.add_argument('-k', '--max-rank', type=int, nargs=1, dest='k', \
-		action='store', default=None)
-	# number of lines to compare
-	parser.add_argument('-n', '--nb-lines', type=int, nargs=1, dest='n', \
-		action='store', default=None)
-	# verbose option
-	parser.add_argument('-v', '--verbose', dest='verbose', action='store_const', \
-		const=True, default=False)
-	# file names
-	parser.add_argument('files', metavar='file', type=file, nargs=2, \
+	# subparser for one thesaurus
+	oneFileParser = subparsers.add_parser('single')
+	oneFileParser.add_argument('files', metavar='file', type=file, nargs=1, \
+		action='store', help='file for the thesaurus')
+	oneFileParser.add_argument('-w', '--Wordnet', dest='method', action='store_const', \
+		const='Wordnet', default='Wordnet', \
+		help='method used to compare a thesaurus to WordNet')
+	
+	#subparser for two thesauri
+	twoFilesParser = subparsers.add_parser('pair')
+	twoFilesParser.add_argument('files', metavar='file', type=file, nargs=2, \
 		action='store', help='files for the thesauri')
 	
+	
+	# output file to write the results in
+	parser.add_argument('-o', '--output-file', metavar='file', dest='outputFile', 
+		action='store', default="./result.thsim",
+		help='output file in which similarity scores and file names will be written'+\
+		'(default: "./result.thsim")')
+	# neighbour sets similarity measure
+	parser.add_argument('-l', '--Lin', dest='method', action='store_const', \
+		const='Lin', default='rank', \
+		help='method used to calculate the similarity between two neighbour sets')
+	# test index
+	parser.add_argument('-i', '--test-index', type=int, dest='i', \
+		action='store', default=0, \
+		help="index of a single word to compare as a test")
+	# fixed maximum rank distance
+	parser.add_argument('-k', '--max-rank', type=int, dest='k', \
+		action='store', default=None, \
+		help="maximum number of neighbours to compare")
+	# number of lines to compare
+	parser.add_argument('-n', '--nb-lines', type=int, dest='n', \
+		action='store', default=None, \
+		help="maximum number of lines to compare")
+	# verbose option
+	parser.add_argument('-v', '--verbose', dest='verbose', action='store_const', \
+		const=True, default=False, \
+		help="display information about each comparison")
+		
+
 	## PROCESS PARAMETERS
-	args = parser.parse_args()
-	i = args.i[0] if args.i !=None else 0
-	k = args.k[0] if args.k !=None else None
-	n = args.n[0] if args.n !=None else None
+	a = parser.parse_args()
+	for item in vars(a):
+		print item, ":", vars(a)[item]
 	
 	## start operations
 	stime = time.time()
@@ -197,24 +304,36 @@ if __name__=='__main__':
 	print "***************************************************************************\n"
 
 	## read files
-	th1 = extract_terms(args.files[0], args.method, k)
-	th2 = extract_terms(args.files[1], args.method, k)
+	thesauri = [extract_terms(file, a.method, a.k) for file in a.files]
+	names = [f.name for f in a.files]
+	if len(a.files) < 2:
+		thesauri.append(create_wordnet_thesaurus(thesauri[0], a.method))
+		names.append("WordNet")
 	
 	## verify extracted information
-	print_lines(th1, max=10, line_max=75, title="\""+args.files[0].name+"\" after sort:")
-	print_lines(th2, max=10, line_max=75, title="\""+args.files[1].name+"\" after sort:")
+	for th, name in zip(thesauri, names):
+		print_lines(th, max=10, line_max=75, title="\""+name+"\" after sort:")
+		print '\n'
 	
-	## test for a single target word
-	print "\nComparing sets at index", i
+	## NEIGHBOUR SET COMPARISON
+	print "\nComparing sets at index", a.i
 	print "*******************************"
-	sim_score1 = neighbor_set_similarity(th1[i], th2[i], method=args.method, verbose=args.verbose)
+	set1, set2 = [th[a.i] for th in thesauri]
+	sim_score1 = {
+	  'Lin'	: 	neighbour_set_sim_lin(set1, set2, verbose=a.verbose),
+	  'rank': 	neighbour_set_sim_rank(set1, set2, verbose=a.verbose)
+	}[a.method]
 	print "\nSimilarity score = ", sim_score1, "\n"
 	
-	## and finally compare the pair of thesauri
+	
+	## THESAURI COMPARISON
 	print "\nComparing thesauri"
 	print "******************"
-	sim_score2 = thesaurus_similarity(th1, th2, n, args.verbose)
+	with open(a.outputFile, 'w') as output:
+		sim_score2 = thesaurus_sim(thesauri, a.method, n=a.n, verbose=a.verbose)
+		output.write(str(sim_score2) + '\t' + '\t'.join(names))
 	print "\nSimilarity score = ", sim_score2, "\n"
 
 	etime = time.time()
 	print "\n>Execution took", etime-stime, "seconds"   
+	
