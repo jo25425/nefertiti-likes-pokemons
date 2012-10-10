@@ -49,7 +49,7 @@ import time, string, argparse
 ## Extracts from the specified files the term that are to appear in the thesaurus.
 ## Each term is the first field of a line.
 ## @return list of extracted terms
-def extract_terms(file, discard=True, verbose=False):
+def extract_terms(file, wnDb="./wordnet.words", discard=True, verbose=False):
 	terms = []
 	
 	try:
@@ -66,14 +66,14 @@ def extract_terms(file, discard=True, verbose=False):
 	
 	except IOError as e: 
 		## find all terms in WordNet
-		for synset in wn.all_synsets():
+		for synset in list(wn.all_synsets())[:100]:
 			terms += [lemma.name for lemma in synset.lemmas \
 				if lemma.name not in terms]
 		## write them in a file
 		if not discard:
-			with open("./wordnet.words", 'w') as f:
+			with open(wnDb, 'w') as f:
 				f.write('\n'.join(terms))
-			os.chmod(file, stat.S_IREAD)
+			os.chmod(wnDb, stat.SF_IMMUTABLE)
 	return terms
 
 
@@ -98,8 +98,7 @@ def create_wordnet_neighbour_set(words, targetWord, ic, k=None, verbose=False):
 		print "Creating set for " + targetWord
 		
 	words.remove(targetWord)
-	set = [tuple for tuple in [(w, lin_wordnet_sim(targetWord, w, ic)) for w in words] \
-		if tuple[0] != -1]
+	set = [(w, lin_wordnet_sim(targetWord, w, ic)) for w in words]
 	set.sort(key=itemgetter(1), reverse=True)
 	if k:
 		set = set[:k]
@@ -128,18 +127,19 @@ def print_lines(list, min=0, max=None, line_max=None, title="List"):
 
 if __name__=='__main__':
 	appDir = os.path.dirname(os.path.realpath(__file__))
+	appWnDb = os.path.join(appDir, "wordnet.words")
 
 	## PARSE COMMAND LINE
 	parser = argparse.ArgumentParser(description='Compare two thesauri.')
 	
 	# input file for words
 	parser.add_argument('-i', '--input', metavar='file', dest='inputFile',
-		action='store', default=os.path.join(appDir, "wordnet.words"),
-		help='file for terms to look for in WordNet')
+		action='store', default=appWnDb,
+		help='input file for terms to look for in WordNet')
 	# output file for thesaurus
 	parser.add_argument('-o', '--output', metavar='file', dest='outputFile',
 		action='store', default="./wordnet.thesaurus",
-		help='output file in which the thesaurus will be written'+
+		help='output file where the thesaurus will be written'+
 		'(default: "./wordnet.thesaurus")')
 	# fixed maximum rank distance
 	parser.add_argument('-k', '--max-rank', type=int, dest='k',
@@ -172,7 +172,7 @@ if __name__=='__main__':
 	## read file
 	print "[1] Extracting words from input file",\
 	      "\n------------------------------------"
-	terms = extract_terms(a.inputFile, a.discard, a.verbose)
+	terms = extract_terms(a.inputFile, appWnDb, a.discard, a.verbose)
 	if a.verbose:
 		print_lines(terms, max=100, title="-- Extracted " + str(len(terms)) + " terms --")
 	
