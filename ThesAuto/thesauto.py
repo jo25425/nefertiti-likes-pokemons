@@ -39,151 +39,187 @@ __email__ = "jr317@sussex.ac.uk"
 __status__ = "Development"
 #~ -----------------------------------------------------------------------------
 
-import nltk, os, stat, sys
-from nltk.corpus import wordnet as wn
-from nltk.corpus import wordnet_ic as wn_ic
+import sys
+import argparse
+import time
+import string
+import stat
+import os
+from os.path import *
+from nltk.corpus import wordnet as wn, wordnet_ic as wn_ic
 from operator import itemgetter
-import time, string, argparse
 
-
-## Extracts from the specified files the term that are to appear in the thesaurus.
-## Each term is the first field of a line.
-## @return list of extracted terms
-def extract_terms(file, wnDb="./wordnet.words", discard=True, verbose=False):
-	terms = []
+class ThesAuto:
 	
-	try:
-		## terms from file
-		with open(file) as f:
-			for line in f:
-				## get 1st field
-				t = string.split(line)[0]
-				## keep if in WordNet and in IC
-				if wn.synsets(t):
-					terms.append(t)
-				elif verbose:
-					print t, "not found in WordNet"
+	## Initialises the parameters of the module
+	def __init__(self, inputFile, outputFile, k, discard, verbose):
+		## input file for words
+		self.inputFile = inputFile 
+		## output file for thesaurus
+		self.outputFile = outputFile
+		## fixed maximum rank distance
+		self.k = k
+		## discard option for words
+		self.discard = discard
+		## verbose option
+		self.verbose = verbose
+		## WordNet words database
+		self.database = join(dirname(realpath(__file__)), ".wordnet.words")
+		print "db =", self.database
 	
-	except IOError as e: 
-		## find all terms in WordNet
-		for synset in list(wn.all_synsets())[:100]:
-			terms += [lemma.name for lemma in synset.lemmas \
-				if lemma.name not in terms]
-		## write them in a file
-		if not discard:
-			with open(wnDb, 'w') as f:
-				f.write('\n'.join(terms))
-			os.chmod(wnDb, stat.SF_IMMUTABLE)
-	return terms
-
-
-## Lin's WordNet similarity function
-def lin_wordnet_sim(word1, word2, ic):
-	possibleValues = [wn.lin_similarity(synset1, synset2, ic) \
-				for synset1 in wn.synsets(word1) \
-				for synset2 in wn.synsets(word2) \
-				if synset1.pos == synset2.pos \
-				and synset1.pos in ic and synset2.pos in ic]
-	return max(possibleValues) if possibleValues else -1
-
-
-## Creates a neighbour set for a target word using a list of words available and an ic (Information Content
-## of a corpus). This set can be limited to a chosen number of neighbours k.
-## Synsets whose PoS doesn't appear in the ic corpus are ignored.
-## @return neighbour set [type: list of string and (string, float) tuples]
-def create_wordnet_neighbour_set(words, targetWord, ic, k=None, verbose=False):
-
-	## neighbour set creation
-	if verbose:
-		print "Creating set for " + targetWord
+	
+	## Runs the automatic construction of a thesaurus
+	def run(self):
+		## start operations
+		stime = time.time()
+		print "***************************************************************************"
+		print "WORDNET THESAURUS CREATION TOOL"
+		print "***************************************************************************\n"
 		
-	words.remove(targetWord)
-	set = [(w, lin_wordnet_sim(targetWord, w, ic)) for w in words]
-	set.sort(key=itemgetter(1), reverse=True)
-	if k:
-		set = set[:k]
+		## prepare WordNet IC
+		#~ brown_ic = wn_ic.ic('ic-brown.dat')
+		semcor_ic = wn_ic.ic('ic-semcor.dat')
+		
+		## read file
+		print "[1] Extracting words from input file\n" + \
+		      "------------------------------------"
+		terms = self.extract_terms(self.inputFile, self.database, self.discard, self.verbose)
+		if self.verbose:
+			self.print_lines(terms, max=100, title="-- Extracted " + str(len(terms)) + " terms --")
+		
+		## create thesaurus
+		print "\n[2] Creating thesaurus in output file\n" + \
+		      "-------------------------------------"
+		with open(self.outputFile, 'w') as output:
+			for t in terms:
+				newSet = self.create_wordnet_neighbour_set(terms, t, semcor_ic, self.k, self.verbose)
+				output.write( self.set_to_string(newSet) )
+		
+		etime = time.time()
+		print "\n>Execution took", etime-stime, "seconds"   
 	
-	return [targetWord] + set
+	
+	## Extracts from the specified files the term that are to appear in the thesaurus.
+	## Each term is the first field of a line.
+	## @return list of extracted terms
+	def extract_terms(self, file, database="./.wordnet.words", discard=True, verbose=False):
+		terms = []
+		tryDb, makeDb = file is None, False
+		
+		## read terms from file
+		if file:
+			try:
+				for line in open(file, 'r'):
+					## get 1st field
+					t = string.split(line)[0]
+					## keep if in WordNet
+					if wn.synsets(t):
+						terms.append(t)
+					elif verbose:
+						print t, "not found in WordNet"
+		
+			except IOError as e:
+				tryDb = True
+				
+		## read terms from database
+		if tryDb:
+			try:
+				terms = [string.split(line)[0] for line in open(database, 'r')]
+			except IOError as e:
+				makeDb = True
+		
+		## find terms in WordNet
+		if makeDb:
+			for synset in list(wn.all_synsets()):
+				terms += [lemma.name for lemma in synset.lemmas \
+					if lemma.name not in terms]
+			## write them in a file
+			if not discard:
+				open(database, 'w').write('\n'.join(terms))
+				os.chmod(database, stat.SF_IMMUTABLE)
+		return terms
 
 
-## Converts a neighbour set (containing tuples) to a printable string
-## @return string for the neighbour set
-def set_to_string(set):
-	neighbour_to_string = lambda tuple: tuple[0] + '\t' + str(tuple[1])
-	return '\t'.join([set[0]] + [neighbour_to_string(w) for w in set[1:]]) + '\n'
+	## Lin's WordNet similarity function
+	def lin_wordnet_sim(self, word1, word2, ic):
+		possibleValues = [wn.lin_similarity(synset1, synset2, ic) \
+					for synset1 in wn.synsets(word1) \
+					for synset2 in wn.synsets(word2) \
+					if synset1.pos == synset2.pos \
+					and synset1.pos in ic and synset2.pos in ic]
+		return max(possibleValues) if possibleValues else -1
 
 
-## Prints an array with customizable start, end, line length and title
-def print_lines(list, min=0, max=None, line_max=None, title="List"):
-	if not max or max > len(list):
-		max = len(list)
-	print title
-	for index in range(min, max):
-		lineText = str(list[index])
-		print (lineText[:line_max] + "...") if line_max and len(lineText) > line_max \
-			else lineText
-	print "\n"
+	## Creates a neighbour set for a target word using a list of words available and an ic (Information Content
+	## of a corpus). This set can be limited to a chosen number of neighbours k.
+	## Synsets whose PoS doesn't appear in the ic corpus are ignored.
+	## @return neighbour set [type: list of string and (string, float) tuples]
+	def create_wordnet_neighbour_set(self, words, targetWord, ic, k=None, verbose=False):
+
+		## neighbour set creation
+		if verbose:
+			print "Creating set for " + targetWord
+			
+		words.remove(targetWord)
+		set = [(w, self.lin_wordnet_sim(targetWord, w, ic)) for w in words]
+		set.sort(key=itemgetter(1), reverse=True)
+		if k:
+			set = set[:k]
+		
+		return [targetWord] + set
+
+
+	## Converts a neighbour set (containing tuples) to a printable string
+	## @return string for the neighbour set
+	def set_to_string(self, set):
+		neighbour_to_string = lambda tuple: tuple[0] + '\t' + str(tuple[1])
+		return '\t'.join([set[0]] + [neighbour_to_string(w) for w in set[1:]]) + '\n'
+
+
+	## Prints an array with customizable start, end, line length and title
+	def print_lines(self, list, min=0, max=None, line_max=None, title="List"):
+		if not max or max > len(list):
+			max = len(list)
+		print title
+		for index in range(min, max):
+			lineText = str(list[index])
+			print (lineText[:line_max] + "...") if line_max and len(lineText) > line_max \
+				else lineText
+		print "\n"
+
 
 
 if __name__=='__main__':
-	appDir = os.path.dirname(os.path.realpath(__file__))
-	appWnDb = os.path.join(appDir, "wordnet.words")
-
 	## PARSE COMMAND LINE
 	parser = argparse.ArgumentParser(description='Compare two thesauri.')
 	
 	# input file for words
 	parser.add_argument('-i', '--input', metavar='file', dest='inputFile',
-		action='store', default=appWnDb,
-		help='input file for terms to look for in WordNet')
+		action='store', default="...ThesAuto/wordnet.words",
+		help='input file for terms to look for in WordNet (default: "...ThesAuto/wordnet.words")')
 	# output file for thesaurus
 	parser.add_argument('-o', '--output', metavar='file', dest='outputFile',
 		action='store', default="./wordnet.thesaurus",
-		help='output file where the thesaurus will be written'+
-		'(default: "./wordnet.thesaurus")')
+		help='output file where the thesaurus will be written (default: "./wordnet.thesaurus")')
 	# fixed maximum rank distance
 	parser.add_argument('-k', '--max-rank', type=int, dest='k',
 		action='store', default=100,
-		help="number of neighbours to keep")
+		help='number of neighbours to keep (default: 100)')
 	# discard option for words
 	parser.add_argument('-d', '--discard', dest='discard',
 		action='store_true', default=False,
-		help=" discard the record of words that appear in WordNet (default: False)")
+		help=' discard the record of words that appear in WordNet (default: False)')
 	# verbose option
 	parser.add_argument('-v', '--verbose', dest='verbose', 
 		action='store_true', default=False,
-		help="display information about operations (default: False)")
+		help='display information about operations (default: False)')
 	
 	a = parser.parse_args()
 	for item in vars(a):
 		print item, ":", vars(a)[item]
+		
+	thesAuto = ThesAuto(a.inputFile, a.outputFile, a.k, a.discard, a.verbose)
+	thesAuto.run()
 	
-	## start operations
-	stime = time.time()
-	print "***************************************************************************"
-	print "WORDNET THESAURUS CREATION TOOL"
-	print "***************************************************************************\n"
-	
-	
-	## prepare WordNet IC
-	#~ brown_ic = wn_ic.ic('ic-brown.dat')
-	semcor_ic = wn_ic.ic('ic-semcor.dat')
-	
-	## read file
-	print "[1] Extracting words from input file",\
-	      "\n------------------------------------"
-	terms = extract_terms(a.inputFile, appWnDb, a.discard, a.verbose)
-	if a.verbose:
-		print_lines(terms, max=100, title="-- Extracted " + str(len(terms)) + " terms --")
-	
-	## create thesaurus
-	print "\n[2] Creating thesaurus in output file",\
-	      "\n-------------------------------------"
-	with open(a.outputFile, 'w') as output:
-		for t in terms:
-			newSet = create_wordnet_neighbour_set(terms, t, semcor_ic, a.k, a.verbose)
-			output.write( set_to_string(newSet) )
-	
-	etime = time.time()
-	print "\n>Execution took", etime-stime, "seconds"   
+
 	
