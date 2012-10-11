@@ -33,7 +33,7 @@ __author__ = "Joanne Robert"
 __copyright__ = "Copyright (c) 2012, University of Sussex"
 __credits__ = ["Joanne Robert"]
 __license__ = "3-clause BSD"
-__version__ = "1.0.0"
+__version__ = "1.0"
 __maintainer__ = "Joanne Robert"
 __email__ = "jr317@sussex.ac.uk"
 __status__ = "Development"
@@ -49,7 +49,17 @@ from os.path import *
 from nltk.corpus import wordnet as wn, wordnet_ic as wn_ic
 from operator import itemgetter
 
+
 class ThesAuto:
+	
+	"""
+	Build a thesaurus for a set of words based on similarity scores determined using WordNet.
+	
+	The set of words can be specified via a file - the first field of each line being a word 
+	- or will be the entire set of words appearing in WordNet.
+	This tool comes with a database containing this entire set.
+	It is possible to choose the number of neighbours kept for each word.
+	"""
 	
 	## Initialises the parameters of the module
 	def __init__(self, inputFile, outputFile, k, discard, verbose):
@@ -65,7 +75,6 @@ class ThesAuto:
 		self.verbose = verbose
 		## WordNet words database
 		self.database = join(dirname(realpath(__file__)), ".wordnet.words")
-		print "db =", self.database
 	
 	
 	## Runs the automatic construction of a thesaurus
@@ -85,7 +94,7 @@ class ThesAuto:
 		      "------------------------------------"
 		terms = self.extract_terms(self.inputFile, self.database, self.discard, self.verbose)
 		if self.verbose:
-			self.print_lines(terms, max=100, title="-- Extracted " + str(len(terms)) + " terms --")
+			self.print_lines(terms, max=20, title="-- Extracted " + str(len(terms)) + " terms --")
 		
 		## create thesaurus
 		print "\n[2] Creating thesaurus in output file\n" + \
@@ -117,7 +126,6 @@ class ThesAuto:
 						terms.append(t)
 					elif verbose:
 						print t, "not found in WordNet"
-		
 			except IOError as e:
 				tryDb = True
 				
@@ -155,13 +163,11 @@ class ThesAuto:
 	## Synsets whose PoS doesn't appear in the ic corpus are ignored.
 	## @return neighbour set [type: list of string and (string, float) tuples]
 	def create_wordnet_neighbour_set(self, words, targetWord, ic, k=None, verbose=False):
-
 		## neighbour set creation
 		if verbose:
 			print "Creating set for " + targetWord
-			
-		words.remove(targetWord)
-		set = [(w, self.lin_wordnet_sim(targetWord, w, ic)) for w in words]
+
+		set = [(w, self.lin_wordnet_sim(targetWord, w, ic)) for w in words if w != targetWord]
 		set.sort(key=itemgetter(1), reverse=True)
 		if k:
 			set = set[:k]
@@ -178,19 +184,22 @@ class ThesAuto:
 
 	## Prints an array with customizable start, end, line length and title
 	def print_lines(self, list, min=0, max=None, line_max=None, title="List"):
-		if not max or max > len(list):
-			max = len(list)
+		stop = lambda x, L: x if x and x < len(L) else len(L)
+		
 		print title
-		for index in range(min, max):
+		
+		stopList = stop(max, list)
+		for index in range(min, stopList):
 			lineText = str(list[index])
-			print (lineText[:line_max] + "...") if line_max and len(lineText) > line_max \
-				else lineText
-		print "\n"
+			stopText = stop(line_max, lineText)
+			print lineText[:stopText] + ("..." if stopText < len(lineText) else "")
+			
+		print "..." if stopList != len(list) else ""
 
 
 
 if __name__=='__main__':
-	## PARSE COMMAND LINE
+	## parse command line
 	parser = argparse.ArgumentParser(description='Compare two thesauri.')
 	
 	# input file for words
@@ -213,10 +222,6 @@ if __name__=='__main__':
 	parser.add_argument('-v', '--verbose', dest='verbose', 
 		action='store_true', default=False,
 		help='display information about operations (default: False)')
-	
-	a = parser.parse_args()
-	for item in vars(a):
-		print item, ":", vars(a)[item]
 		
 	thesAuto = ThesAuto(a.inputFile, a.outputFile, a.k, a.discard, a.verbose)
 	thesAuto.run()
