@@ -86,8 +86,8 @@ class ThesAuto:
 		print "***************************************************************************\n"
 		
 		## prepare WordNet IC
-		#~ brown_ic = wn_ic.ic('ic-brown.dat')
-		semcor_ic = wn_ic.ic('ic-semcor.dat')
+		from nltk.corpus import brown
+		brown_ic = wn.ic(brown, False, 1.0)
 		
 		## read file
 		print "[1] Extracting words from input file\n" + \
@@ -101,7 +101,7 @@ class ThesAuto:
 		      "-------------------------------------"
 		with open(self.outputFile, 'w') as output:
 			for t in terms:
-				newSet = self.create_wordnet_neighbour_set(terms, t, semcor_ic, self.k, self.verbose)
+				newSet = self.create_wordnet_neighbour_set(terms, t, brown_ic, self.k, self.verbose)
 				output.write( self.set_to_string(newSet) )
 		
 		etime = time.time()
@@ -147,14 +147,23 @@ class ThesAuto:
 				os.chmod(database, stat.SF_IMMUTABLE)
 		return terms
 
+	
+	## Replaces an 's' (for ADJ SAT) PoS tag by a simple 'a' (for ADJ) in order to add some smoothing
+	## to the processing of PoS tags in the IC (Information Content) of a corpus
+	## @return same synset, possibly with a smoothed PoS tag
+	def smoothed(self, synset):
+		if synset.pos == 's':
+			synset.pos = 'a'
+		return synset
+
 
 	## Lin's WordNet similarity function
 	def lin_wordnet_sim(self, word1, word2, ic):
+		
 		possibleValues = [wn.lin_similarity(synset1, synset2, ic) \
-					for synset1 in wn.synsets(word1) \
-					for synset2 in wn.synsets(word2) \
-					if synset1.pos == synset2.pos \
-					and synset1.pos in ic and synset2.pos in ic]
+					for synset1 in [self.smoothed(s) for s in wn.synsets(word1)] \
+					for synset2 in [self.smoothed(s) for s in wn.synsets(word2)] \
+					if synset1.pos == synset2.pos and synset1.pos in ic]
 		return max(possibleValues) if possibleValues else -1
 
 
@@ -223,6 +232,7 @@ if __name__=='__main__':
 		action='store_true', default=False,
 		help='display information about operations (default: False)')
 		
+	a = parser.parse_args()
 	thesAuto = ThesAuto(a.inputFile, a.outputFile, a.k, a.discard, a.verbose)
 	thesAuto.run()
 	
