@@ -42,7 +42,12 @@ __status__ = "Development"
 import argparse
 import time
 import sys
-from menusystem import Menu, Choice
+import subprocess
+import os
+from os import *
+from menusystem import *
+from inputcontrol import *
+from outputformatting import *
 
 
 class BybloCmp:
@@ -55,13 +60,13 @@ class BybloCmp:
 	def __init__(self, inputFile, bybloDir, storageDir, outputFile, verbose):
 		
 		## input file for pre-processed data
-		self.inputFile = inputFile 
+		self.inputFile = path.abspath(inputFile)
 		## location of the Byblo directory
-		self.bybloDir = bybloDir
+		self.bybloDir = path.abspath(bybloDir)
 		## storage directory for Byblo output
-		self.storageDir = storageDir
+		self.storageDir = path.abspath(storageDir)
 		## output file for  comparison results 
-		self.outputFile = outputFile
+		self.outputFile = path.abspath(outputFile)
 		## verbose option
 		self.verbose = verbose
 		## options menu
@@ -74,11 +79,17 @@ class BybloCmp:
 	## It allows to navigate in the program, accessing all available functionalities."
 	def initMainMenu(self):
 		mainChoices = [
-			Choice(1, description="Execution of Byblo iterations"),
+			Choice(1, description="Execution of Byblo iterations",
+				## execution function
+				handler=self.execution),
 			Choice(2, description="Iterations planning"),
 			Choice(3, description="Comparison results"),
-			Choice(4, description="Options", subMenu=self.optionsMenu),
-			Choice(5, description="Exit", value='Bye!', handler=lambda anything:False)
+			Choice(4, description="Options", 
+				## directly access the OPTIONS submenu
+				subMenu=self.optionsMenu),
+			Choice(5, description="Exit", 
+				## function returing a 'False' to exit this menu
+				handler=lambda anything:False)
 		]
 		return Menu("Main Menu", mainChoices, "What do you want to do?")
 		
@@ -108,6 +119,7 @@ class BybloCmp:
 	
 	
 	## Changes one of the options.
+	## Only produces correct values that are accepted by external verifiers (type/file/parameters)
 	def changeOption(self, args):
 		checkingFunction, selector, attr = args # separate function and attribute name
 		oldVal = getattr(self, attr) # store old value
@@ -127,20 +139,63 @@ class BybloCmp:
 				print "Invalid value."
 	
 	
-	def	execution(self):
+	def	execution(self, args):
 		
-		## get settings
+		## determine parameters to use
+		STAGE(1, 4, "Determining parameters")
+		# for now directly, later from planned stuff
 		
-		## run
+		parameters = {}
+		while True:
+			parameters = raw_input("\nParameters for this iteration of Byblo? ")
+			if checkBybloSettings(parameters, type='studied'):
+				break
+				
+		## run Byblo
+		STAGE(2, 4, "Running Byblo")
 		
-		## compare
+		## create output directory when required
+		if not path.exists(self.storageDir):
+			makedirs(self.storageDir)
 		
-		## display results of comparison
+		## move to Byblo directory
+		startDir=path.abspath(getcwd())
+		chdir(self.bybloDir)
+		INFO("moved to " + getcwd())
+		
+		## execute Byblo in a subprocess
+		logFile = open(devnull, 'w') if not self.verbose else None
+		out = subprocess.call(path.abspath("./byblo.sh ") + " -i " + self.inputFile + " -o " + self.storageDir +\
+			" "+ parameters, shell=True, stdout=logFile, stderr=logFile)
+		if logFile != None:
+			logFile.close()
+		INFO("Byblo failed with settings:\n" + parameters + "\n   Fail Code: " + str(out), out != 0)
+			
+		## move back to initial directory
+		chdir(startDir)
+		INFO("moved back to " + getcwd())
+		
+		## compare with previous iteration
+		STAGE(3, 4, "Comparing with previous iteration")
+		print "Woooooh... Not yet, let's all calm down."
+		""" NEED TO:
+			1) compute similarity between resultant thesaurus and gold-standard
+			2) produce some graphs (distributions only)
+		"""
+		
+		
+		## results over an entire sequence
+		#~ STAGE(1, 4, "Computing results over an entire sequence of parameterisations")
+		"""
+		Compute rest of the graphs (those working on several outputs)
+		"""
+		
+		return True # to stay in this level's menu
 	
 	
 	## Run
 	def run(self):
-		## Start operations.
+		## start operations.
 		stime = time.time()
 		print "***************************************************************************"
 		print "PARAMETERISATION COMPARISON TOOL"
@@ -152,7 +207,7 @@ class BybloCmp:
 		"""
 		This will eventually be modified so that iterations can be launched using scripts.
 		1) a script used to run Byblo each time, but menu still used
-		2) a general script that includes a configuration file holding all of the information for iteration planning
+		2) a general script that includes a configuration file holding all of the INFOrmation for iteration planning
 		At least ideally....
 		"""
 		
@@ -182,7 +237,7 @@ if __name__=='__main__':
 	## verbose option
 	parser.add_argument('-v', '--verbose', dest='verbose', 
 		action='store_true', default=False,
-		help='display information about operations (default: False)')
+		help='display INFOrmation about operations (default: False)')
 		
 	a = parser.parse_args()
 	bybloCmp = BybloCmp(a.inputFile, a.bybloDir, a.storageDir, a.outputFile, a.verbose)
