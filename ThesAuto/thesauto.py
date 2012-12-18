@@ -48,6 +48,7 @@ import multiprocessing
 import itertools
 import os
 from os.path import *
+from heapq import *
 from math import ceil
 from nltk.corpus import wordnet, brown
 from operator import itemgetter
@@ -148,52 +149,183 @@ class ThesAuto:
 	
 	##
 	##
-	def createWordnetFullThesaurus(self, words):
-		## prepare WordNet IC and other tools
-		brownIC = wordnet.ic(brown, False, 1.0)
+	def buildPosTermsDictionary(self, terms):
+		posTerms = {'a':[], 'v':[], 'n':[], 'r':[]}
+		for t in terms:
+			for p in posTerms.iterkeys():
+				if wordnet.synsets(t, pos=p):
+					posTerms[p].append(t)
+		posTerms = dict((p, terms) for p, terms in posTerms.items() if len(terms) >= 2)
+		return posTerms
+	
+	##
+	##
+	def buildWordnetFullThesaurus(self, words, ic):
+		## prepare process handling
+		one=time.time()
+		
 		processes, fullThesaurus = [], []
-		chunkSize = int( ceil( 1.0*len(words)/self.nbCPU ) )
+		nbProcesses = min(self.nbCPU, len(words))
+		nbFullChunks = len(words) % nbProcesses
+		if nbFullChunks == 0: nbFullChunks = nbProcesses
+		chunkSize = int( ceil( 1.0*len(words)/nbProcesses ) )
 		resultQueue = multiprocessing.Queue()
+		#~ print "nbProcess", nbProcesses
+		#~ print "nbFullChunks", nbFullChunks
+		#~ print "chunkSize", chunkSize
 		
 		## compute thesaurus chunks in different processes
-		for counter in range(self.nbCPU):
-			chunkWords = words[counter*chunkSize:min( (counter+1)*chunkSize, len(words) )]
-			p = multiprocessing.Process(target=self.createWordnetPartialThesaurus, 
-				args=(resultQueue, chunkWords, words, brownIC, counter))
+		for counter in range(nbProcesses):
+			start, end = self.determineChunkSlice(nbFullChunks, counter, chunkSize)
+			chunkWords = words[start:end]
+			p = multiprocessing.Process(name="p"+str(counter), target=self.buildWordnetPartialThesaurus, 
+				args=(resultQueue, chunkWords, words, ic, counter))
 			processes.append(p)
 			p.start()
+			#~ print p
+			
+		for p in processes:
+			fullThesaurus += resultQueue.get()
+			p.join()
+		fullThesaurus.sort()
 		
-		return sorted(itertools.chain.from_iterable(resultQueue.get() for p in processes))
-		
+		two=time.time()
+		print "Finished creating thesaurus in", two-one, "seconds!"
+			
+		return fullThesaurus
 	
+	
+	## faster than using % ?
+	##
+	def determineChunkSlice(self, nbFullChunks, counter, chunkSize):
+		start = min(counter, nbFullChunks) * chunkSize
+		end = start + chunkSize
+		if counter >= nbFullChunks:
+			start += (counter - nbFullChunks) * (chunkSize - 1)
+			end = start + (chunkSize - 1)
+		return (start, end)
+		
 	
 	##
 	##
-	def createWordnetPartialThesaurus(self, queue, selectedWords, allWords, ic, nb):
-		print "-> starting  for part", nb, "with", len(selectedWords), "words"
-		partialThesaurus =  [set for set in [self.createWordnetNeighbourSet( \
+	def buildWordnetPartialThesaurus(self, queue, selectedWords, allWords, ic, nb):
+		#~ print "-> starting  for part", nb, "with", len(selectedWords), "words"
+		partialThesaurus =  [set for set in [self.buildWordnetNeighbourSet( \
 					allWords, targetWord, ic, self.maxRank) \
 					for targetWord in selectedWords] if set]
 		queue.put(partialThesaurus)
 		
-		print "<- ending process", nb
+		#~ print "<- ending process", nb
 
 
-	## Creates a neighbour set for a target word using a list of words available and an ic 
+	## Builds a neighbour set for a target word using a list of words available and an ic 
 	## (Information Content of a corpus). This set can be limited to a chosen number of 
 	## neighbours k.
 	## Synsets whose PoS doesn't appear in the ic corpus are ignored.
 	## @return neighbour set (type: [string, (string, float), (string, float), ...]
-	def createWordnetNeighbourSet(self, words, targetWord, ic, k=None, verbose=False):
+	def buildWordnetNeighbourSet(self, words, targetWord, ic, k=None, verbose=False):
 		## neighbour set creation
 		if verbose:
 			print "Creating set for " + targetWord
 
-		set = [(w, linWordnetSimilarity(targetWord, w, ic)) 
-			for w in words if w != targetWord]
+		set = []
+		for otherWord in [w for w in words if w != targetWord]:
+			similarityScore = linWordnetSimilarity(targetWord, otherWord, ic)
+			if similarityScore:
+				set.append((otherWord, similarityScore))
+			
 		set.sort(key=itemgetter(1), reverse=True)
 		
 		return ([targetWord] + set[:k]) if set else None
+	
+
+	def lookForItem(self, what, attr, where):
+		for i, thing in enumerate(where):
+			if thing[attr] == what[attr]:
+				return i
+		return -1
+	
+	
+	## @return set resulting from the merge
+	def mergeNeighbourSets(self, neighbours1, neighbours2, maxRank=None):
+		pt1, pt2 = 0, 0
+		target, resultSet = neighbours1[0], []
+		neighbours1, neighbours2 = neighbours1[1:], neighbours2[1:]
+		len1, len2 = len(neighbours1), len(neighbours2)
+		
+		# produce set of duplicated items
+		l1, l2 = [n[0] for n in neighbours1], [n[0] for n in neighbours2]
+		#~ print "\n** LIST L1 **\n", l1
+		#~ print "** LIST L2 **\n", l2
+		commonNeighbours = set(l1).intersection(l2)
+		#~ print "** COMMON NEIGHBOURS **\n", commonNeighbours, "\n"
+		
+		while (not maxRank or len(resultSet) < maxRank) and (pt1 < len1 or pt2 < len2) :
+			tuple1 = neighbours1[pt1] if pt1 < len1 else ("", -1)
+			tuple2 = neighbours2[pt2] if pt2 < len2 else ("", -1)
+			
+			if tuple1[1] >= tuple2[1]:
+				greater = tuple1
+				pt1 += 1
+			else:
+				greater = tuple2
+				pt2 += 1
+			
+			if greater[0] in commonNeighbours: # if is one of the duplicated terms
+				i = self.lookForItem(greater, 0, resultSet)
+				
+				# no duplicate yet
+				if i == -1:
+					#~ print greater[0], "\t: adding first instance of duplicate"
+					resultSet.append(greater)
+				# duplicate found
+				else:
+					commonNeighbours.remove(greater[0])
+					# with lower score
+					if resultSet[i][1] < greater[1]:
+						#~ print greater[0], ": changing", resultSet[i][1] , "for", greater[1]
+						resultSet[i] = greater
+					# with higher score
+					#~ else :
+						#~ print greater[0], ": keeping", resultSet[i][1] , "over", greater[1]
+			else:
+				#~ print greater[0], "\t: adding unique term"
+				resultSet.append(greater)
+		#~ print len(neighbours1), len(neighbours2), len(resultSet)
+		return [target] + resultSet
+	
+
+	##
+	## @return thesaurus resulting from merge
+	def mergeThesauri(self, posThesauri, maxRank=None):
+		
+		# initialisation
+		thHeads = []
+		for p in posThesauri.iterkeys():
+			thHeads.append( (posThesauri[p][0], p) )
+			posThesauri[p] = posThesauri[p][1:]
+		heapify(thHeads)
+		
+		# processing
+		resultTh = []
+		while thHeads:
+			next = heappop(thHeads)
+			set, p = next[0], next[1]
+			
+			# add set to thesaurus
+			# if same term, merge them
+			if resultTh != [] and resultTh[-1][0] == set[0]:
+				set = self.mergeNeighbourSets(resultTh[-1], set, maxRank)
+				resultTh[-1] = set
+			else:
+				resultTh.append(set)
+			
+			# move next to heap if any left
+			if posThesauri[p]:
+				heappush(thHeads, (posThesauri[p][0], p) )
+				posThesauri[p] = posThesauri[p][1:]
+		
+		return resultTh
 
 
 	## Converts a neighbour set (containing tuples) to a printable string
@@ -212,35 +344,86 @@ class ThesAuto:
 		print "***************************************************************************\n"
 		
 		
-		
 		## read file
 		print "[1] Extracting words from input file\n" + \
 		      "------------------------------------"
 		terms = self.extractTerms(self.inputFile, self.database, self.discard, self.verbose)
-		#~ if self.verbose:
-			#~ self.print_lines(terms, max=20, title="-- Extracted " + str(len(terms)) + " terms --")
 		self.print_lines(terms, max=20, 
 			title="-- Extracted " + str(len(terms)) + " terms --")
 		
+		###############################################################################################
+		# NOW, DISTRIBUTE TERMS IN POS DICTIONARY AND EXECUTE STEP 2 FOR ALL DICTIONARIES SEPARATELY
+		# THEN, USE MERGING OPERATIONS DEVELOPED DURING EXPERIMENT 2 TO REbuild THE COMPLETE THESAURUS
+		###############################################################################################
+		TESTCUT  =  -1
+		###############################################################################################
+		
+		## sort terms depending on PoS (with duplicates)
+		print "\n[2] Creating PoS dictionary\n" + \
+		      "-------------------------------------"
+		posTerms = self.buildPosTermsDictionary(terms)		
+		for p in posTerms.iterkeys():
+			###########################################################
+			#~ posTerms[p] = posTerms[p][:TESTCUT]
+			###########################################################
+			self.print_lines(posTerms[p], max=10, line_max=75, \
+				title="\n\n** DICTIONARY for PoS "+p+" with "+str(len(posTerms[p]))+" items **")
 		
 		
-		## create thesaurus
+		## create a thesaurus for each set of terms
+		print "\n[3] Creating PoS thesauri\n" + \
+		      "-------------------------------------"
+		brownIC = wordnet.ic(brown, False, 1.0)
+		posThesauri = {}
+		for p in posTerms.iterkeys():
+			start = time.time()
+			thesaurus = self.buildWordnetFullThesaurus(posTerms[p], brownIC)
+			if thesaurus: posThesauri[p] = thesaurus
+			end = time.time()
+			
+			# display
+			self.print_lines(posThesauri[p], max=10, line_max=75, \
+				title="\n\n-- THESAURUS for PoS "+p+" in "+str(end-start)+" seconds --")
+		
+		
+		print "\n[4] Merging PoS thesauri\n" + \
+		      "-------------------------------------"
+		start = time.time()
+		resultTh = self.mergeThesauri(posThesauri, self.maxRank)
+		end = time.time()
+		self.print_lines(resultTh, max=10, line_max=75, \
+			title="\n\n-- THESAURUS for ALL PoS rebuilt in "+str(end-start)+" seconds --")
+		
+		
+		## save the final thesaurus
+		print "\n[5] Saving full thesaurus\n" + \
+		      "-------------------------------------"
+		open(self.outputFile, 'w').write( \
+			''.join([self.setToString(set) for set in resultTh]))
+		print self.outputFile + " written."
+		
+		"""
+		
+		## build thesaurus
 		print "\n[2] Creating thesaurus in output file\n" + \
 		      "-------------------------------------"
-		      
-		
-		thesaurus = self.createWordnetFullThesaurus(terms)
+		thesaurus = self.buildWordnetFullThesaurus(terms)
 		self.print_lines(thesaurus, max=20, line_max=75, \
 			title="\n\n-- Constructed " + str(len(thesaurus)) + " neighbour sets --")
+			
+			
 			
 		with open(self.outputFile, 'w') as output:
 			for set in thesaurus:
 				output.write( self.setToString(set) )
 		
-		
+		"""
 		
 		etime = time.time()
 		print "\n>Execution took", etime-stime, "seconds"
+
+
+		
 
 	## Prints an array with customizable start, end, line length and title
 	def print_lines(self, list, min=0, max=None, line_max=None, title="List"):
