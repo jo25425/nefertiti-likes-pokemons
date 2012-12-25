@@ -53,6 +53,7 @@ from math import ceil
 from nltk.corpus import wordnet, brown
 from operator import itemgetter
 
+import printer
 	
 ## Replaces an 's' (for ADJ SAT) PoS tag by a simple 'a' (for ADJ) in order to add some smoothing
 ## to the processing of PoS tags in the IC (Information Content) of a corpus
@@ -123,8 +124,8 @@ class ThesAuto:
 					## keep if in WordNet
 					if wordnet.synsets(t):
 						terms.append(t)
-					elif verbose:
-						print t, "not found in WordNet"
+					else:
+						printer.info(t+" not found in WordNet", verbose)
 			except IOError as e:
 				tryDb = True
 				
@@ -190,7 +191,7 @@ class ThesAuto:
 		fullThesaurus.sort()
 		
 		two=time.time()
-		print "Finished creating thesaurus in", two-one, "seconds!"
+		#~ print "Finished creating thesaurus in", two-one, "seconds!"
 			
 		return fullThesaurus
 	
@@ -225,8 +226,8 @@ class ThesAuto:
 	## @return neighbour set (type: [string, (string, float), (string, float), ...]
 	def buildWordnetNeighbourSet(self, words, targetWord, ic, k=None, verbose=False):
 		## neighbour set creation
-		if verbose:
-			print "Creating set for " + targetWord
+		#~ if verbose:
+			#~ print "Creating set for " + targetWord
 
 		set = []
 		for otherWord in [w for w in words if w != targetWord]:
@@ -339,16 +340,12 @@ class ThesAuto:
 	def run(self):
 		## start operations
 		stime = time.time()
-		print "***************************************************************************"
-		print "WORDNET THESAURUS CREATION TOOL"
-		print "***************************************************************************\n"
-		
+		printer.mainTitle("Thesauto - automated creation of a thesaurus using WordNet", self.verbose)
 		
 		## read file
-		print "[1] Extracting words from input file\n" + \
-		      "------------------------------------"
+		printer.stage(1, 5, "Extracting words from input file")
 		terms = self.extractTerms(self.inputFile, self.database, self.discard, self.verbose)
-		self.print_lines(terms, max=20, 
+		printer.lines(terms, max=20, 
 			title="-- Extracted " + str(len(terms)) + " terms --")
 		
 		###############################################################################################
@@ -359,20 +356,18 @@ class ThesAuto:
 		###############################################################################################
 		
 		## sort terms depending on PoS (with duplicates)
-		print "\n[2] Creating PoS dictionary\n" + \
-		      "-------------------------------------"
+		printer.stage(2, 5, "Creating PoS dictionary")
 		posTerms = self.buildPosTermsDictionary(terms)		
 		for p in posTerms.iterkeys():
 			###########################################################
 			#~ posTerms[p] = posTerms[p][:TESTCUT]
 			###########################################################
-			self.print_lines(posTerms[p], max=10, line_max=75, \
+			printer.lines(posTerms[p], max=10, line_max=75, \
 				title="\n\n** DICTIONARY for PoS "+p+" with "+str(len(posTerms[p]))+" items **")
 		
 		
 		## create a thesaurus for each set of terms
-		print "\n[3] Creating PoS thesauri\n" + \
-		      "-------------------------------------"
+		printer.stage(3, 5, "Creating PoS thesauri")
 		brownIC = wordnet.ic(brown, False, 1.0)
 		posThesauri = {}
 		for p in posTerms.iterkeys():
@@ -382,62 +377,28 @@ class ThesAuto:
 			end = time.time()
 			
 			# display
-			self.print_lines(posThesauri[p], max=10, line_max=75, \
-				title="\n\n-- THESAURUS for PoS "+p+" in "+str(end-start)+" seconds --")
+			printer.lines(posThesauri[p], max=10, line_max=75, \
+				title="\n\n-- THESAURUS for PoS "+p+" in "+str(end-start)+" seconds --",
+				verbose=self.verbose)
 		
 		
-		print "\n[4] Merging PoS thesauri\n" + \
-		      "-------------------------------------"
+		printer.stage(4, 5, "Merging PoS thesauri")
 		start = time.time()
 		resultTh = self.mergeThesauri(posThesauri, self.maxRank)
 		end = time.time()
-		self.print_lines(resultTh, max=10, line_max=75, \
-			title="\n\n-- THESAURUS for ALL PoS rebuilt in "+str(end-start)+" seconds --")
+		printer.lines(resultTh, max=10, line_max=75, \
+			title="\n\n-- THESAURUS for ALL PoS rebuilt in "+str(end-start)+" seconds --",
+			verbose=self.verbose)
 		
 		
 		## save the final thesaurus
-		print "\n[5] Saving full thesaurus\n" + \
-		      "-------------------------------------"
+		printer.stage(5, 5, "Saving full thesaurus")
 		open(self.outputFile, 'w').write( \
 			''.join([self.setToString(set) for set in resultTh]))
-		print self.outputFile + " written."
-		
-		"""
-		
-		## build thesaurus
-		print "\n[2] Creating thesaurus in output file\n" + \
-		      "-------------------------------------"
-		thesaurus = self.buildWordnetFullThesaurus(terms)
-		self.print_lines(thesaurus, max=20, line_max=75, \
-			title="\n\n-- Constructed " + str(len(thesaurus)) + " neighbour sets --")
-			
-			
-			
-		with open(self.outputFile, 'w') as output:
-			for set in thesaurus:
-				output.write( self.setToString(set) )
-		
-		"""
+		printer.info(self.outputFile + " written.", verbose)
 		
 		etime = time.time()
-		print "\n>Execution took", etime-stime, "seconds"
-
-
-		
-
-	## Prints an array with customizable start, end, line length and title
-	def print_lines(self, list, min=0, max=None, line_max=None, title="List"):
-		stop = lambda x, L: x if x and x < len(L) else len(L)
-		
-		print title
-		
-		stopList = stop(max, list)
-		for index in range(min, stopList):
-			lineText = str(list[index])
-			stopText = stop(line_max, lineText)
-			print lineText[:stopText] + ("..." if stopText < len(lineText) else "")
-			
-		print "..." if stopList != len(list) else ""
+		printer.info("\n>Execution took" + str(etime-stime) + "seconds", verbose)
 
 
 

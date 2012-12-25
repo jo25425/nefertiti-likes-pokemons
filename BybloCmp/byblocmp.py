@@ -139,10 +139,10 @@ class BybloCmp:
 				print "Invalid value."
 	
 	
-	def	execution(self, args):
+	def execution(self, args):
 		
 		## determine parameters to use
-		STAGE(1, 4, "Determining parameters")
+		printer.stage(1, 4, "Determining parameters")
 		# for now directly, later from planned stuff
 		
 		parameters = {}
@@ -152,7 +152,7 @@ class BybloCmp:
 				break
 				
 		## run Byblo
-		STAGE(2, 4, "Running Byblo")
+		printer.stage(2, 4, "Running Byblo")
 		
 		## create output directory when required
 		if not path.exists(self.storageDir):
@@ -161,7 +161,7 @@ class BybloCmp:
 		## move to Byblo directory
 		startDir=path.abspath(getcwd())
 		chdir(self.bybloDir)
-		INFO("moved to " + getcwd())
+		printer.info("moved to " + getcwd())
 		
 		## execute Byblo in a subprocess
 		logFile = open(devnull, 'w') if not self.verbose else None
@@ -169,14 +169,14 @@ class BybloCmp:
 			" "+ parameters, shell=True, stdout=logFile, stderr=logFile)
 		if logFile != None:
 			logFile.close()
-		INFO("Byblo failed with settings:\n" + parameters + "\n   Fail Code: " + str(out), out != 0)
+		printer.info("Byblo failed with settings:\n" + parameters + "\n   Fail Code: " + str(out), out != 0)
 			
 		## move back to initial directory
 		chdir(startDir)
-		INFO("moved back to " + getcwd())
+		printer.info("moved back to " + getcwd())
 		
 		## compare with previous iteration
-		STAGE(3, 4, "Comparing with previous iteration")
+		printer.stage(3, 4, "Comparing with previous iteration")
 		print "Woooooh... Not yet, let's all calm down."
 		""" NEED TO:
 			1) compute similarity between resultant thesaurus and gold-standard
@@ -185,7 +185,7 @@ class BybloCmp:
 		
 		
 		## results over an entire sequence
-		#~ STAGE(1, 4, "Computing results over an entire sequence of parameterisations")
+		#~ printer.stage(1, 4, "Computing results over an entire sequence of parameterisations")
 		"""
 		Compute rest of the graphs (those working on several outputs)
 		"""
