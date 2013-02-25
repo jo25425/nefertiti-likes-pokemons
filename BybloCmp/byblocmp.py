@@ -48,6 +48,7 @@ from os.path import *
 from menusystem import *
 import inputchecking
 import outputformatting
+import thesauto
 import bybloeval
 import cmpstats
 
@@ -68,10 +69,14 @@ class BybloCmp:
 	"""
 	
 	## Initialises the parameters of the module
-	def __init__(self, inputFile, bybloDir, storageDir, outputFile, verbose):
+	def __init__(self, inputFile, baseThesaurus, bybloDir, storageDir, outputFile, verbose):
 		
 		## input file for pre-processed data
 		self.inputFile = abspath(inputFile)
+		## base WordNet thesaurus for evaluation against WordNet 
+		self.baseThesaurus = self.inputFile + ".WN" if not baseThesaurus\
+			else (abspath(baseThesaurus) if not isdir(baseThesaurus)
+			else join(abspath(baseThesaurus), basename(self.inputFile) + ".WN"))
 		## location of the Byblo directory
 		self.bybloDir = abspath(bybloDir)
 		## storage directory for Byblo output
@@ -142,15 +147,18 @@ class BybloCmp:
 		formatVal =  lambda str: "\n\t\t[" + str + "]"
 		
 		optionsChoices = [
-			Choice(1, description="Input file for preprocessed data" + formatVal(self.inputFile),
-				value=[isFile,1,  "inputFile"], handler=self.changeOption),
-			Choice(2, description="Location of the Byblo directory" + formatVal(self.bybloDir),
-				value=[isDir, 2, "bybloDir"], handler=self.changeOption),
-			Choice(3, description="Storage directory for Byblo output" + formatVal(self.storageDir),
-				value=[isDir, 3, "storageDir"], handler=self.changeOption),
-			Choice(4, description="Output file for comparison results" + formatVal(self.outputFile),
-				value=[isFile, 4, "outputFile"], handler=self.changeOption),
-			Choice(5, description="Back to main menu", handler=lambda anything:False)
+			Choice(1, description="Input file for pre-processed data" + formatVal(self.inputFile),
+				value=[isFile, 1,  "inputFile"], handler=self.changeOption),
+			Choice(2, description="base WordNet file for evaluation against WordNet" 
+				+ formatVal(self.baseThesaurus),
+				value=[isFile, 2,  "inputFile"], handler=self.changeOption),
+			Choice(3, description="Location of the Byblo directory" + formatVal(self.bybloDir),
+				value=[isDir, 3, "bybloDir"], handler=self.changeOption),
+			Choice(4, description="Storage directory for Byblo output" + formatVal(self.storageDir),
+				value=[isDir, 4, "storageDir"], handler=self.changeOption),
+			Choice(5, description="Output file for comparison results" + formatVal(self.outputFile),
+				value=[isFile, 5, "outputFile"], handler=self.changeOption),
+			Choice(6, description="Back to main menu", handler=lambda anything:False)
 		]
 		return Menu("Options Menu", optionsChoices, "What do you want to change?")
 	
@@ -218,7 +226,7 @@ class BybloCmp:
 	## @return  True
 	def execution(self, args):
 		## determine parameters to use
-		self.printer.stage(1, 5, "Determining parameters")
+		self.printer.stage(1, 6, "Determining parameters")
 		"""
 			for now directly, later from planned stuff... or not? (could fairly easily just read from a file)
 		"""
@@ -228,28 +236,62 @@ class BybloCmp:
 			else: print ""
 		
 		## run Byblo
-		self.printer.stage(2, 5, "Running Byblo")
+		self.printer.stage(2, 6, "Running Byblo")
 		returnCode = self.runByblo(parameters)
 		if returnCode != 0: return True # if Byblo failed, end iteration
 		
+		## prepare base thesaurus
+		self.printer.stage(3, 6, "Preparing base WordNet thesaurus for evaluation")
+		self.prepareBaseThesaurus()
+		
 		## evaluate built thesaurus
-		self.printer.stage(3, 5, "Comparing with previous iteration")
+		self.printer.stage(4, 6, "Comparing with previous iteration")
 		self.evalIteration()
 		
 		## generate histograms
-		self.printer.stage(4, 5, "Generating histograms")
+		self.printer.stage(5, 6, "Generating histograms")
 		self.plotIteration()
 		
 		## write to output file
-		self.printer.stage(5, 5, "Writing iteration summary")
+		self.printer.stage(6, 6, "Writing iteration summary")
 		self.writeIteration()
 		
 		## either continue or end current sequence and plot
 		self.iterationEndMenu.waitForInput()
 		
 		return True # to stay in this level's menu
-		
-		
+	
+	
+	##
+	##
+	def prepareBaseThesaurus(self):
+		## try opening the file
+		try:
+			#~ test = open(self.baseThesaurus, 'r')
+			#~ test.close()
+			open(self.baseThesaurus, 'r').close()
+			self.printer.info("Specified base thesaurus ready.")
+			
+		## create it if it didn't work
+		except IOError as e:
+			findThesaurus = lambda rec: join(rec["output"], "thesauri",
+						basename(rec["input"])\
+						+ cmpstats.paramSubstring(rec["settings"]
+							if rec['settings'] != 'None' else "") 
+						+ ".sims.neighbours.strings")
+					
+			self.printer.info("Can't read specified base thesaurus file.")
+			self.printer.info(
+				"Warning: Creating the base thesaurus" + \
+				"\nThis is only done once at the beginning of the sequence," + \
+				"\nbut it might take a while (up to several days).")
+			thesautoTask = thesauto.ThesAuto(findThesaurus(self.record[-1]), self.baseThesaurus, 
+				database=None, maxRank=None, discard=True, verbose=self.verbose)
+			thesautoTask.run()
+			
+			self.printer.info("Base WordNet thesaurus created.")
+	
+	
 	## Runs Byblo in a subprocess, renames files produced so that they reflect the settings used,
 	## and consequently adds an entry to the record of iterations
 	## @return code indicating success/failure of the iteration
@@ -317,12 +359,17 @@ class BybloCmp:
 					+ ".sims.neighbours.strings")
 		evalOutput = "eval-iter"+str(len(self.record))+".tmp"
 		
-		
-		
 		## compute similarity with WordNet
 		with open(findThesaurus(self.record[-1]), 'r') as currentTh:
-			evalTask1 = bybloeval.BybloEval([currentTh], evalOutput, method="rank", 
-				testIndex=0, maxRank=None, maxIndex=None, verbose=self.verbose)
+			evalTask1 = bybloeval.BybloEval(
+				[currentTh], 
+				self.baseThesaurus, 
+				evalOutput, 
+				method="rank", 
+				testIndex=0, 
+				maxRank=None, 
+				maxIndex=None, 
+				verbose=self.verbose)
 			evalTask1.run()
 			
 			## write evaluation result to record
@@ -335,8 +382,15 @@ class BybloCmp:
 		else: 
 			with open(findThesaurus(self.record[-2]), 'r') as previousTh,\
 				open(findThesaurus(self.record[-1]), 'r') as currentTh:
-				evalTask2 = bybloeval.BybloEval([currentTh, previousTh], evalOutput, method="rank", 
-					testIndex=0, maxRank=None, maxIndex=None, verbose=self.verbose)
+				evalTask2 = bybloeval.BybloEval(
+					[currentTh, previousTh], 
+					self.baseThesaurus,
+					evalOutput, 
+					method="rank", 
+					testIndex=0, 
+					maxRank=None, 
+					maxIndex=None, 
+					verbose=self.verbose)
 				evalTask2.run()
 				
 				## write evaluation result to record
@@ -346,6 +400,8 @@ class BybloCmp:
 		## delete temporary file
 		os.remove(evalOutput)
 		self.printer.lines(self.record[-1], title="Record for the current interation")
+	
+	
 	
 	
 	## Plots some statistics over a single iteration of Byblo using the cmpstats module.
@@ -380,19 +436,11 @@ class BybloCmp:
 					+ cmpstats.paramSubstring(rec["settings"]
 						if rec["settings"] != "None" else "") 
 					+ ".sims.neighbours.strings")
-		
-		with open(self.outputFile, ('w' if not isfile(self.outputFile) else 'a')) as output:
-			## sequence start if needed
-			out = lambda s : output.write(s + '\n')
-			if len(self.record) == 1:
-				out( ''.join(['-' for i in range(100)]))
-				out("%-20s" %  "Local current time: " +
-					time.asctime( time.localtime(time.time()) ))
-				out("%-20s" % "Data file: " + self.inputFile)
-				out("%-20s" % "Storage directory: " + self.storageDir)
-				out('') # empty line
+
+		## sequence start if needed
+		if len(self.record) == 1: self.writeSequenceStart()
 			
-			## about last iteration
+		with open(self.outputFile, ('w' if not isfile(self.outputFile) else 'a')) as output:
 			out = lambda s : output.write('\t' + s + '\n')
 			title = "Iteration " + str(len(self.record))
 			out(title)
@@ -411,6 +459,24 @@ class BybloCmp:
 			out("Corresponding graphs:")
 			for histogram in self.record[-1]["histograms"]:
 				out(' * ' + histogram)
+			out('') # empty line
+
+
+	## Writes information about a sequence of iterations when it is started.
+	## More specifically, appends to the results file:
+	## 		- the local current time,
+	## 		- the data file used,
+	## 		- the base WordNet thesaurus used,
+	## 		- and the storage directory used.
+	def writeSequenceStart(self):
+		with open(self.outputFile, ('w' if not isfile(self.outputFile) else 'a')) as output:
+			out = lambda s : output.write(s + '\n')
+			out( ''.join(['-' for i in range(100)]))
+			out("%-20s" %  "Local current time: " +
+				time.asctime( time.localtime(time.time()) ))
+			out("%-20s" % "Data file: " + self.inputFile)
+			out("%-20s" % "Base WordNet thesaurus: " + self.baseThesaurus)
+			out("%-20s" % "Storage directory: " + self.storageDir)
 			out('') # empty line
 	
 	
@@ -540,8 +606,9 @@ class BybloCmp:
 		return allStrings, stringsForCharts, stringsForPlots, paramValuesLists
 	
 	
-	##
-	##
+	## Writes information about a sequence of iterations when it is ended.
+	## More specifically, appends to the results file the file names of all the plots corresponding to 
+	## this sequence.
 	def writeSequenceEnd(self):
 		with open(self.outputFile, 'a') as output:
 			out = lambda s : output.write(s + '\n')
@@ -557,6 +624,11 @@ if __name__=='__main__':
 	## input file for preprocessed data
 	argParser.add_argument(metavar='file', dest='inputFile', action='store', 
 		help='input file for preprocessed data')
+	## base WordNet thesaurus for evaluation against WordNet 
+	argParser.add_argument('-th', '--thesaurus', metavar='file', dest='baseThesaurus',
+		action='store',
+		help='base WordNet thesaurus for evaluation against WordNet (specific to input) ' +
+			'(default: input file name + \".WN\")')
 	## location of the Byblo directory
 	argParser.add_argument('-b', '--byblo', metavar='dir', dest='bybloDir',
 		action='store', default="../Byblo-2.1.0",
@@ -575,7 +647,8 @@ if __name__=='__main__':
 		help='display information about operations (default: False)')
 		
 	a = argParser.parse_args()
-	bybloCmp = BybloCmp(a.inputFile, a.bybloDir, a.storageDir, a.outputFile, a.verbose)
+	bybloCmp = BybloCmp(a.inputFile, a.baseThesaurus, a.bybloDir, a.storageDir, 
+		a.outputFile, a.verbose)
 	bybloCmp.run()
 	
 

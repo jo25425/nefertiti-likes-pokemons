@@ -79,9 +79,15 @@ class BybloEval:
 	"""
 	
 	##Initialises the parameters of the module
-	def __init__(self, inputFiles, outputFile, method, testIndex, maxRank, maxIndex, verbose):
+	def __init__(self, inputFiles, baseThesaurus, outputFile, method, testIndex, 
+		maxRank, maxIndex, verbose):
 		## input files containing the thesauri
 		self.inputFiles =  inputFiles
+		## base WordNet thesaurus for evaluation against WordNet 
+		inputName = self.inputFiles[0].name
+		self.baseThesaurus = inputName + ".WN" if not baseThesaurus\
+			else (abspath(baseThesaurus) if not isdir(baseThesaurus)
+			else join(abspath(baseThesaurus), basename(inputName) + ".WN"))
 		## output file for comparison results
 		self.outputFile = abspath(outputFile) if not isdir(outputFile)\
 			else join(abspath(outputFile), "result.thsim")
@@ -113,7 +119,7 @@ class BybloEval:
 		
 		if len(self.inputFiles) == 1:
 			thesaurusFile = names[0] + ".WN" # corresponds to default name in thesauto
-			self.createWordnetThesaurus(names[0], thesaurusFile, self.maxRank)
+			self.createWordnetThesaurus(names[0], thesaurusFile, self.baseThesaurus, self.maxRank)
 			thesauri.append(self.extractTerms( open(thesaurusFile, 'r') ))
 			names.append("WordNet")
 		
@@ -172,8 +178,8 @@ class BybloEval:
 
 	## Creates a thesaurus from WordNet, using the terms already present in an existing thesaurus
 	## @return array representing a neighbour set
-	def createWordnetThesaurus(self, inputFile, thesaurusFile, maxRank=None, nbCPU=None):
-		thesautoTask = thesauto.ThesAuto(inputFile, thesaurusFile, None,
+	def createWordnetThesaurus(self, inputFile, thesaurusFile, baseThesaurus, maxRank=None):
+		thesautoTask = thesauto.ThesAuto(inputFile, thesaurusFile, baseThesaurus,
 			maxRank, discard=True, verbose=self.verbose)
 		thesautoTask.run()
 		
@@ -314,6 +320,11 @@ if __name__=='__main__':
 	parser.add_argument('inputFiles', metavar='file', type=file, nargs='+',
 		action=required_length(1, 2),
 		help='files containing the thesauri to compare (against WordNet if there is only one)')
+	## base WordNet thesaurus for evaluation against WordNet 
+	parser.add_argument('-th', '--thesaurus', metavar='file', dest='baseThesaurus',
+		action='store',
+		help='base WordNet thesaurus for evaluation against WordNet (specific to input) ' +
+			'(default: input file name + \".WN\")')
 	## output file for comparison results
 	parser.add_argument('-o', '--output-file', metavar='file', dest='outputFile',
 		action='store', default="./result.thsim",
@@ -342,5 +353,6 @@ if __name__=='__main__':
 		help="display information about each comparison (default: False)")
 		
 	a = parser.parse_args()
-	bybloEval = BybloEval(a.inputFiles, a.outputFile, a.method, a.testIndex, a.maxRank, a.maxIndex, a.verbose)
+	bybloEval = BybloEval(a.inputFiles, a.baseThesaurus, a.outputFile, a.method, a.testIndex, 
+		a.maxRank, a.maxIndex, a.verbose)
 	bybloEval.run()

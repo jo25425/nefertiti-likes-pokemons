@@ -125,9 +125,10 @@ class ThesAuto:
 		if chosen and chosen != "...ThesAuto/database.sims":
 			try:
 				test = open(chosen, 'r')
+				test.close()
 				final = chosen
 			except IOError as e:
-				self.printer.info("Error: can't read specified database file.")
+				self.printer.info("Can't read specified database file.")
 				
 		if not final:
 			default = join(dirname(realpath(__file__)), ".database.sims")
@@ -135,7 +136,7 @@ class ThesAuto:
 				test = open(default, 'r')
 				final = default
 			except IOError as e:
-				self.printer.info("Error: can't read default database file.")
+				self.printer.info("Can't read default database file.")
 		return final
 	
 	
@@ -164,7 +165,7 @@ class ThesAuto:
 	## Builds a thesaurus, set by set, using a list of words to find neighbours for and an
 	## ic (Information Content of a corpus).
 	## Empty sets are removed.
-	def buildWordnetThesaurus(self, words):
+	def buildWordnetThesaurus(self, words, IC):
 		## find wanted scores in the database (base thesaurus)
 		if self.database:
 			baseTh = sorted([line for line in open(self.database)])
@@ -187,12 +188,8 @@ class ThesAuto:
 		
 		## compute scores using WordNet
 		else: 
-			## prepare WordNet IC
-			self.printer.info("Preparing WordNet IC (Information Content)...")
-			brownIC = wordnet.ic(brown, False, 1.0)
-			
 			return [set for set in [self.buildNeighbourSetFromWordnet\
-				(words, targetTerm, ic=brownIC, k=self.maxRank) for targetTerm in words] if set]
+				(words, targetTerm, ic=IC, k=self.maxRank) for targetTerm in words] if set]
 
 
 	## Builds a neighbour set from Wordnet for a target word, using a list of words available
@@ -248,19 +245,27 @@ class ThesAuto:
 		self.printer.mainTitle("Thesauto - automated creation of a thesaurus using WordNet")
 		
 		## read file
-		self.printer.stage(1, 5, "Extracting words from input file")
+		self.printer.stage(1, 4, "Extracting words from input file")
 		words = self.extractwords()
 		self.printer.lines(words, max=20, 
 			title="-- Extracted " + str(len(words)) + " words --")
 		
+		## prepare WordNet IC
+		self.printer.stage(2, 4, "Preparing WordNet IC (Information Content)")
+		if not self.database:
+			IC = wordnet.ic(brown, False, 1.0)
+		else:
+			IC = None
+			self.printer.info("Using base WordNet thesaurus as a database instead. Skipped.")
+			
 		## create a thesaurus for each set of words
-		self.printer.stage(3, 5, "Building thesaurus")
-		thesaurus = self.buildWordnetThesaurus(words)
+		self.printer.stage(3, 4, "Building thesaurus")
+		thesaurus = self.buildWordnetThesaurus(words, IC)
 		self.printer.lines(thesaurus, max=10, line_max=75,
-			title="\n\nBuilt thesaurus")
+			title="-- Built thesaurus --")
 			
 		## save the final thesaurus
-		self.printer.stage(5, 5, "Saving full thesaurus")
+		self.printer.stage(4, 4, "Saving full thesaurus")
 		open(self.outputFile, 'w').write( \
 			''.join([self.setToString(set) for set in thesaurus]))
 		self.printer.info(self.outputFile + " written.")
@@ -280,7 +285,7 @@ if __name__=='__main__':
 	parser.add_argument('-o', '--output', metavar='file', dest='outputFile',
 		action='store',
 		help='output file where the thesaurus will be written ' +
-			'(default: "input file name + \".WN\"")')
+			'(default: input file name + \".WN\")')
 	# database for similarity scores (base thesaurus)
 	parser.add_argument('-db', '--database', metavar='file', dest='database',
 		action='store', default="...ThesAuto/database.sims",
