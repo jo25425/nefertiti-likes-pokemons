@@ -18,7 +18,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 import sys
 """Menu System
 
-   Author:  Daniel Mikusa <dan@trz.cc>
+Author:  Daniel Mikusa <dan@trz.cc>
 Copyright:  April 4, 2006
 
 A Menu System is a group of Menu and Choice Object arranged to provide a text
@@ -148,13 +148,13 @@ class Choice:
 		
 		Here are the parameters:
 			
-			   selector -- value that a user will enter to select a Choice
+			selector -- value that a user will enter to select a Choice
 			description -- value that explains job this Choice will accomplish.
-			      value -- value of the selected Choice.
-			    subMenu -- the Menu object that will be triggered if this Choice
-					is selected.
-			    handler -- the function that will be executed if this Choice
-				           is selected.
+			value -- value of the selected Choice.
+			subMenu -- the Menu object that will be triggered if this Choice
+				is selected.
+			handler -- the function that will be executed if this Choice
+				is selected.
 		
 		The handler function will be executed even if the Choice object contains
 		a sub-menu.  The handler function will be executed, and then control

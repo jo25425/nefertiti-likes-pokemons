@@ -48,7 +48,12 @@ import multiprocessing
 import math
 import os
 from os.path import *
+import thesauto
 import outputformatting
+
+
+## global variable holding names of special entries in thesauri
+SPECIAL_ENTRIES = ["__FILTERED__"]
 
 ## Lin's WordNet similarity function
 def linWordnetSimilarity(word1, word2):
@@ -57,6 +62,14 @@ def linWordnetSimilarity(word1, word2):
 				for synset2 in wn.synsets(word2) \
 				if synset1.pos == synset2.pos \
 				and synset1.pos in ic and synset2.pos in ic])
+
+
+## custom type for positive integer (maximum neighbour rank)
+def positiveInt(text):
+	value = int(text)
+	if not 0 < value:
+		raise argparse.ArgumentTypeError("stricly positive integer expected")
+	return value
 
 
 class BybloEval:
@@ -99,10 +112,7 @@ class BybloEval:
 		names = [f.name for f in self.inputFiles]
 		
 		if len(self.inputFiles) == 1:
-			
-			thesaurusFile = "THESAURUS.thesaurus"
-			thesaurusFile = join(abspath(dirname(__file__)), thesaurusFile)
-			
+			thesaurusFile = names[0] + ".WN" # corresponds to default name in thesauto
 			self.createWordnetThesaurus(names[0], thesaurusFile, self.maxRank)
 			thesauri.append(self.extractTerms( open(thesaurusFile, 'r') ))
 			names.append("WordNet")
@@ -115,9 +125,9 @@ class BybloEval:
 		self.printer.stage(2, 3, "Comparing neighbour sets for test index " + str(self.testIndex))
 		set1, set2 = [th[self.testIndex] for th in thesauri]
 		sim_score1 = {
-			  'Lin': self. neighbourSetSimLin(set1, set2, verbose=self.verbose),
-			  'rank': self.neighbourSetSimRank(set1, set2, verbose=self.verbose)
-		}[self.method]
+			  'Lin': self. neighbourSetSimLin,
+			  'rank': self.neighbourSetSimRank
+		}[self.method](set1, set2, verbose=self.verbose)
 		self.printer.info("Similarity score: " + str(sim_score1) + "\n")
 		
 		## [3/3]compare thesauri
@@ -129,7 +139,7 @@ class BybloEval:
 		self.printer.info("Similarity score: " + str(sim_score2) + "\n")
 
 		etime = time.time()
-		self.printer.info("Execution took " + str(etime-stime) + " seconds")
+		self.printer.info("Execution took " + str(etime-stime) + " seconds\n")
 	
 	
 	## Extracts thesaurus entries from a file
@@ -143,17 +153,19 @@ class BybloEval:
 		terms = []
 		for line in file:
 			fields = string.split(line, "\t")
-			fields = fields[:(self.maxRank*2+1) if self.maxRank else None]
 			
-			## build tuples depending on method chosen
-			if self.method == "Lin":
-				line_terms = [(fields[i], float(fields[i+1])) for i in xrange(1, len(fields)) if i%2 == 1]
-			elif self.method == "rank":
-				line_terms = [(fields[i], i/2) for i in xrange(1, len(fields)) if i%2 == 1]
+			if fields[0] not in SPECIAL_ENTRIES:
+				if self.maxRank: fields = fields[:self.maxRank*2+1]
 				
-			line_terms.sort()
-			line_terms = [fields[0]] + line_terms
-			terms.append(line_terms)
+				## build tuples depending on method chosen
+				if self.method == "Lin":
+					line_terms = [(fields[i], float(fields[i+1])) for i in xrange(1, len(fields)) if i%2 == 1]
+				elif self.method == "rank":
+					line_terms = [(fields[i], i/2) for i in xrange(1, len(fields)) if i%2 == 1]
+					
+				line_terms.sort()
+				line_terms = [fields[0]] + line_terms
+				terms.append(line_terms)
 		terms.sort()
 		return terms
 
@@ -161,29 +173,21 @@ class BybloEval:
 	## Creates a thesaurus from WordNet, using the terms already present in an existing thesaurus
 	## @return array representing a neighbour set
 	def createWordnetThesaurus(self, inputFile, thesaurusFile, maxRank=None, nbCPU=None):
-		thesautoDir = join(dirname(dirname(abspath(__file__))), "ThesAuto")
-		sys.path.append(thesautoDir)
-		import thesauto
-		"""
-		add nb CPU option
-		"""
-		## create a thesaurus in a file... name?
-		print ">> Thesaurus to be written in " + thesaurusFile
-		
-		##insert args in this: (thesauto.ThesAuto()).run()
-		nbProcessors = nbCPU if nbCPU else multiprocessing.cpu_count()
-		thesautoTask = thesauto.ThesAuto(inputFile, thesaurusFile, maxRank, 
-			discard=True, verbose=True, nbCPU=nbProcessors)
+		thesautoTask = thesauto.ThesAuto(inputFile, thesaurusFile, None,
+			maxRank, discard=True, verbose=self.verbose)
 		thesautoTask.run()
+		
+		self.printer.info("Thesaurus written in " + thesaurusFile)
 	
 	
-	##
-	##
-	def  neighbourSetSimLin(self, set1, set2, k=None, max_sim_score=None, verbose=False):
+	## Computes the similarity score between two versions of a neighbour set (coming from different
+	## thesauri) using Lin's set similarity measure.
+	## @return float in range [0, 1]
+	def  neighbourSetSimLin(self, set1, set2, verbose=False):
 		sim_score, pt1, pt2 = 0, 1, 1
 		square_score = lambda x: x[1] * x[1]
 		
-		## determine maximum possible similarity score
+		## determine maximum possible similarity score (set specific)
 		max_sim_score = sum([square_score(neighbour) for neighbour in set1[1:]]) \
 			* sum([square_score(neighbour) for neighbour in set2[1:]])
 		max_sim_score = math.sqrt(max_sim_score)
@@ -203,11 +207,9 @@ class BybloEval:
 				score_product = set1[pt1][1]*set2[pt2][1]
 				sim_score += score_product
 				
-				# what is happening?
-				if verbose:
-					print "["+str(pt1)+"]"+str(set1[pt1])
-					print "["+str(pt2)+"]"+str(set2[pt2])
-					print "\t=> "+str(score_product)
+				if verbose: # what is happening?
+					print str(set1[pt1][1]) + ' vs. ' + str(set2[pt2][1]) +' \t'\
+						+ set1[pt1][0] + ' \t=> ' + str(score_product)
 				
 				pt1 += 1
 				pt2 += 1
@@ -215,18 +217,18 @@ class BybloEval:
 		return 1.0 * sim_score / max_sim_score
 	
 	
-	##
-	##
-	def neighbourSetSimRank(self, set1, set2, k=None, max_sim_score=None, verbose=False):
+	## Computes the similarity score between two versions of a neighbour set (coming from different
+	## thesauri) using an adaptation of Lin's set similarity measure based on ranks and not values. This
+	## allows to compare thesauri featuring scores obtained with different similarity measures.
+	## @return float in range [0, 1]
+	def neighbourSetSimRank(self, set1, set2, verbose=False):
 		sim_score, pt1, pt2 = 0, 1, 1
 		
-		## determine maximum rank distance if not passed
-		if k == None:
-			k = max(len(set1), len(set2)) - 1 # target word doesn't count
+		## determine maximum rank distance to compute maximum similarity score
+		k = max(len(set1), len(set2)) - 1 # target word doesn't count
 			
-		## determine maximum similarity score if not passed
-		if max_sim_score == None:
-			max_sim_score = sum([i*i for i in xrange(1, k+1)])
+		## compute maximum similarity score 
+		max_sim_score = sum([i*i for i in xrange(1, k+1)])
 			
 		## avoid division by zero
 		if max_sim_score == 0:
@@ -242,12 +244,10 @@ class BybloEval:
 			else: # potential neighbour present in both sets
 				score_product = (k - set1[pt1][1])*(k - set2[pt2][1])
 				sim_score += score_product
-					
-				# what is happening?
-				if verbose:
-					print "["+str(pt1)+"]"+str(set1[pt1])
-					print "["+str(pt2)+"]"+str(set2[pt2])
-					print "\t=> "+str(score_product)
+				
+				if verbose: # what is happening?
+					print str(set1[pt1][1]) + ' vs. ' + str(set2[pt2][1]) +' \t'\
+						+ set1[pt1][0] + '\t => ' + str(score_product)
 				
 				pt1 += 1
 				pt2 += 1
@@ -255,15 +255,16 @@ class BybloEval:
 		return 1.0 * sim_score / max_sim_score
 	
 	
-	##
-	##
-	def thesaurusSim(self, th, method="rank", n=None, k=None, verbose=False):
-		th1, th2 = th[0], th[1]
+	## Computes the similarity between two thesauri, using one of the two measures available (based on
+	## either values or ranks), and with the possibility to limit the comparison to a given number of entries
+	## (i.e. neighbour sets).
+	## @return float in range [0, 1]
+	def thesaurusSim(self, thesauri, method="rank", n=None, verbose=False):
+		th1, th2 = thesauri[0], thesauri[1]
 		global_sim_score, pt1, pt2 = 0, 0, 0
-		fixed_k = (k != None)
 		neighbour_set_sim = {
 			'Lin': self.neighbourSetSimLin,
-			'rank': self.neighbourSetSimRank,
+			'rank': self.neighbourSetSimRank
 		}[method]
 		
 		## determine maximum thesaurus size if not passed (n allows comparison on a subset)
@@ -274,35 +275,14 @@ class BybloEval:
 		if n == 0:
 			return 0
 		
-		## determine a possible maximum rank distance if not passed
-		if k == None:
-			k = len(th1[0]) - 1
-		
-		## and a possible maximum neighbour set similarity score
-		## (to avoid unneccessary computations of unchanged values)
-		max_sim_score = sum([i*i for i in xrange(1, k+1)])
-		
 		while pt1 < n and pt2 < n and pt1 < len(th1) and pt2 < len(th2) :
 			
 			if th1[pt1][0] == th2[pt2][0]: # target word present in both sets
-				l1, l2 = len(th1[pt1])-1, len(th2[pt2])-1
-				
-				if fixed_k and k <= l1 and k <= l2 or k == l1 == l2 :
-					set_sim = {
-						'Lin': self.neighbourSetSimLin,
-						'rank': self.neighbourSetSimRank,
-					}[method](th1[pt1], th2[pt2], k, max_sim_score)
-				else:
-					set_sim = {
-						'Lin': self.neighbourSetSimLin,
-						'rank': self.neighbourSetSimRank,
-					}[method](th1[pt1], th2[pt2])
+				set_sim = neighbour_set_sim(th1[pt1], th2[pt2])
 				global_sim_score += set_sim
 				
-				# what is happening?
-				if verbose:
-					print "th1[", pt1, "]", th1[pt1][0], ": th2[", pt2, "]", th2[pt2][0], \
-					"=> ", set_sim
+				if verbose: # what is happening?
+					print th1[pt1][0] + ' \t=> ' + str(set_sim)
 				
 				pt1 += 1
 				pt2 += 1
@@ -349,11 +329,11 @@ if __name__=='__main__':
 		action='store', default=0,
 		help="index of a single word to compare as a test (default: 0)")
 	## maximum neighbour rank
-	parser.add_argument('-k', '--max-rank', metavar='n', type=int, dest='maxRank', 
+	parser.add_argument('-k', '--max-rank', metavar='n', type=positiveInt, dest='maxRank', 
 		action='store', default=None,
 		help="maximum rank for neighbours to compare")
 	## maximum entry index
-	parser.add_argument('-n', '--max-index', metavar='n', type=int, dest='maxIndex',
+	parser.add_argument('-n', '--max-index', metavar='n', type=positiveInt, dest='maxIndex',
 		action='store', default=None,
 		help="maximum index for entries to compare")
 	## verbose option
@@ -362,10 +342,5 @@ if __name__=='__main__':
 		help="display information about each comparison (default: False)")
 		
 	a = parser.parse_args()
-	for item in vars(a):
-		print item, ":", vars(a)[item]
 	bybloEval = BybloEval(a.inputFiles, a.outputFile, a.method, a.testIndex, a.maxRank, a.maxIndex, a.verbose)
 	bybloEval.run()
-	
-	
-	

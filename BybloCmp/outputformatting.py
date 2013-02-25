@@ -30,16 +30,29 @@ class Printer:
 	def lines(self, list, min=0, max=None, line_max=None, title="List"):
 		if self.verbose:
 			stop = lambda x, L: x if x and x < len(L) else len(L)
+			stopList = stop(max, list)
 			
 			print title
 			
-			stopList = stop(max, list)
-			for index in range(min, stopList):
-				lineText = str(list[index])
-				stopText = stop(line_max, lineText)
-				print lineText[:stopText] + ("..." if stopText < len(lineText) else "")
+			## dictionary
+			if type(list) is dict:
+				for index, key in enumerate(sorted(list.iterkeys())):
+					if index in range(min, stopList):
+						if type(list[key]) is dict:
+							print_lines(list[key], title=key) # recursive print of nested dictionaries
+						else:
+							lineText = key + '\t' + str(list[key])
+							stopText = stop(line_max, lineText)
+							print "   " + lineText[:stopText] + ("..." if stopText < len(lineText) else "")
+			## list
+			else:
+				for index in range(min, stopList):
+					lineText = str(list[index])
+					stopText = stop(line_max, lineText)
+					print lineText[:stopText] + ("..." if stopText < len(lineText) else "")
 				
 			print "..." if stopList != len(list) else ""
+	
 	
 	def record_iter(self, out="standard"):
 		if out is "standard":
