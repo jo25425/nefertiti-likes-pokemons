@@ -53,7 +53,7 @@ import outputformatting
 
 
 ## global variable holding names of special entries in thesauri
-SPECIAL_ENTRIES = ["__FILTERED__"]
+SPECIAL_ENTRIES = ["___FILTERED___"]
 
 ## Replaces an 's' (for ADJ SAT) PoS tag by a simple 'a' (for ADJ) in order to add some smoothing
 ## to the processing of PoS tags in the IC (Information Content) of a corpus
@@ -173,7 +173,7 @@ class ThesAuto:
 			
 			while basePt < len(baseTh) and wordsPt < len(words):
 				tmpSet = baseTh[basePt].split('\t')
-				## wanted term found in base: 1) ormat it (create tuples), 2) move on
+				## wanted term found in base: 1) format it (create tuples), 2) move on
 				if tmpSet[0] == words[wordsPt]:
 					baseTh[basePt] = self.buildNeighbourSetFromDatabase(
 						[t for t in words if t != words[wordsPt]], tmpSet[0], tmpSet, k=self.maxRank)
@@ -246,6 +246,7 @@ class ThesAuto:
 		
 		## read file
 		self.printer.stage(1, 4, "Extracting words from input file")
+		self.printer.info("File: " + basename(self.inputFile))
 		words = self.extractwords()
 		self.printer.lines(words, max=20, 
 			title="-- Extracted " + str(len(words)) + " words --")
@@ -257,6 +258,7 @@ class ThesAuto:
 		else:
 			IC = None
 			self.printer.info("Using base WordNet thesaurus as a database instead. Skipped.")
+			self.printer.info("Base: " + basename(self.database))
 			
 		## create a thesaurus for each set of words
 		self.printer.stage(3, 4, "Building thesaurus")

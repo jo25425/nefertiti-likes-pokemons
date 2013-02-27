@@ -53,7 +53,7 @@ import outputformatting
 
 
 ## global variable holding names of special entries in thesauri
-SPECIAL_ENTRIES = ["__FILTERED__"]
+SPECIAL_ENTRIES = ["___FILTERED___"]
 
 ## Lin's WordNet similarity function
 def linWordnetSimilarity(word1, word2):
@@ -165,9 +165,11 @@ class BybloEval:
 				
 				## build tuples depending on method chosen
 				if self.method == "Lin":
-					line_terms = [(fields[i], float(fields[i+1])) for i in xrange(1, len(fields)) if i%2 == 1]
+					line_terms = [(fields[i], float(fields[i+1])) for i in xrange(1, len(fields)) \
+						if i%2 == 1 and fields[i] not in SPECIAL_ENTRIES]
 				elif self.method == "rank":
-					line_terms = [(fields[i], i/2) for i in xrange(1, len(fields)) if i%2 == 1]
+					line_terms = [(fields[i], i/2) for i in xrange(1, len(fields)) \
+						if i%2 == 1 and fields[i] not in SPECIAL_ENTRIES]
 					
 				line_terms.sort()
 				line_terms = [fields[0]] + line_terms

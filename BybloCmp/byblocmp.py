@@ -97,7 +97,7 @@ class BybloCmp:
 		## parser for input
 		self.parser = inputchecking.Parser()
 		## printer for output
-		self.printer = outputformatting.Printer(self.verbose)
+		self.printer = outputformatting.Printer(True)
 	
 	## Run
 	def run(self):
@@ -188,6 +188,12 @@ class BybloCmp:
 		while True:
 			newVal = raw_input("\nNew value? ")
 			if checkingFunction(newVal):
+					
+				## if change of input file and current sequence not ended yet, end it
+				if attr == "inputFile" and self.record:
+					self.printer.info("The current sequence will be ended now.")
+					self.plotSequence()
+				
 				## modify corresponding option
 				setattr(self, attr, newVal)
 				
@@ -225,8 +231,13 @@ class BybloCmp:
 	## FInally, the user is offered the possibility to end the current sequence.
 	## @return  True
 	def execution(self, args):
+		## prepare base thesaurus
+		self.printer.stage(1, 6, "Preparing base WordNet thesaurus for evaluation")
+		self.prepareBaseThesaurus()
+		if returnCode != 0: return True # if Byblo failed, end iteration
+		
 		## determine parameters to use
-		self.printer.stage(1, 6, "Determining parameters")
+		self.printer.stage(2, 6, "Determining parameters")
 		"""
 			for now directly, later from planned stuff... or not? (could fairly easily just read from a file)
 		"""
@@ -236,13 +247,9 @@ class BybloCmp:
 			else: print ""
 		
 		## run Byblo
-		self.printer.stage(2, 6, "Running Byblo")
+		self.printer.stage(3, 6, "Running Byblo")
 		returnCode = self.runByblo(parameters)
 		if returnCode != 0: return True # if Byblo failed, end iteration
-		
-		## prepare base thesaurus
-		self.printer.stage(3, 6, "Preparing base WordNet thesaurus for evaluation")
-		self.prepareBaseThesaurus()
 		
 		## evaluate built thesaurus
 		self.printer.stage(4, 6, "Comparing with previous iteration")
@@ -253,7 +260,7 @@ class BybloCmp:
 		self.plotIteration()
 		
 		## write to output file
-		self.printer.stage(6, 6, "Writing iteration summary")
+		self.printer.stage(6, 6, "Writing iteration summary", True)
 		self.writeIteration()
 		
 		## either continue or end current sequence and plot
@@ -262,35 +269,79 @@ class BybloCmp:
 		return True # to stay in this level's menu
 	
 	
-	##
-	##
+	## Prepares the thesaurus that will be used as a base for later evaluation against WordNet. This thesaurus 
+	## is built using the entries appearing in the input file, and similarity scores computed from WordNet.
+	## return code indicating success/failure of the construction
 	def prepareBaseThesaurus(self):
 		## try opening the file
 		try:
-			#~ test = open(self.baseThesaurus, 'r')
-			#~ test.close()
 			open(self.baseThesaurus, 'r').close()
 			self.printer.info("Specified base thesaurus ready.")
 			
 		## create it if it didn't work
 		except IOError as e:
-			findThesaurus = lambda rec: join(rec["output"], "thesauri",
-						basename(rec["input"])\
-						+ cmpstats.paramSubstring(rec["settings"]
-							if rec['settings'] != 'None' else "") 
-						+ ".sims.neighbours.strings")
-					
 			self.printer.info("Can't read specified base thesaurus file.")
 			self.printer.info(
 				"Warning: Creating the base thesaurus" + \
-				"\nThis is only done once at the beginning of the sequence," + \
-				"\nbut it might take a while (up to several days).")
-			thesautoTask = thesauto.ThesAuto(findThesaurus(self.record[-1]), self.baseThesaurus, 
+				"\n       This is only done once at the beginning of the sequence," + \
+				"\n       but it might take a while (up to several days).")
+			
+			## 1) list entries in input file with 2 first stages of Byblo
+			if not exists(self.storageDir): os.makedirs(self.storageDir)
+			tmpDir = join (self.storageDir, "tmp-thesauri")
+			if not exists(tmpDir): os.makedirs(tmpDir)
+			
+			## move to Byblo directory
+			startDir=abspath(os.getcwd())
+			os.chdir(self.bybloDir)
+			self.printer.info("Moved to " + os.getcwd())
+			
+			## execute Byblo in a subprocess
+			logFile = open(devnull, 'w')
+			out = subprocess.call(abspath("./byblo.sh ") + " -i " + self.inputFile + " -o " + tmpDir +\
+				" --stages enumerate,count", shell=True, stdout=logFile, stderr=logFile)
+			if logFile: logFile.close()
+			
+			## move back to initial directory
+			os.chdir(startDir)
+			self.printer.info("Moved back to " + os.getcwd())
+			
+			## stop here in case of fail
+			if out != 0:
+				self.printer.info("Byblo [enumerate,count] failed.\n       Fail Code: " + str(out))
+				return -1
+				
+			## rename files to include the parameter string in their name
+			base = join(tmpDir, basename(self.inputFile))
+			for ext in BYBLO_OUTPUT_EXTENSIONS:
+				filename = base + ext
+				if exists(filename):
+					newname = base + cmpstats.paramSubstring("") + ext
+					os.rename(filename, newname)
+				
+			## 2) convert them from indexes to strings
+			entriesFile = base+ "#.entries"
+			savedFiles = cmpstats.generateStringsFiles(
+				[self.inputFile], 
+				[""], 
+				tmpDir,
+				self.bybloDir,
+				reuse=[],
+				verbose=False,
+				filesToCreate = [entriesFile])
+			
+			## 3) build a thesaurus for them
+			entriesFile = savedFiles[0]
+			thesautoTask = thesauto.ThesAuto(entriesFile, self.baseThesaurus, 
 				database=None, maxRank=None, discard=True, verbose=self.verbose)
 			thesautoTask.run()
 			
+			## 4) delete temporary directory
+			os.system("rm -r " + tmpDir)
+			
 			self.printer.info("Base WordNet thesaurus created.")
 	
+		return 0
 	
 	## Runs Byblo in a subprocess, renames files produced so that they reflect the settings used,
 	## and consequently adds an entry to the record of iterations
@@ -516,6 +567,7 @@ class BybloCmp:
 	
 		self.printer.info("Plots created in subdirectory \"graphs\" of main output directory.")
 		self.writeSequenceEnd()
+		self.record = [] # reinitialise record for new sequence
 		
 		return False # to go back to main menu (after question)
 	
@@ -631,8 +683,8 @@ if __name__=='__main__':
 			'(default: input file name + \".WN\")')
 	## location of the Byblo directory
 	argParser.add_argument('-b', '--byblo', metavar='dir', dest='bybloDir',
-		action='store', default="../Byblo-2.1.0",
-		help='directory for the location Byblo (default: "../Byblo-2.1.0")')
+		action='store', default="../Byblo-2.2.0",
+		help='directory for the location Byblo (default: "../Byblo-2.2.0")')
 	## storage directory for Byblo output
 	argParser.add_argument('-s', '--storage', metavar='dir', dest='storageDir',
 		action='store', default="./byblo-output",

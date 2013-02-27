@@ -81,7 +81,8 @@ def fullParamName(initials):
 ## Converts Byblo result files that use skip indexing so that the strings represented by the indexes 
 ## are restored (slower and heavier but better for result analysis, readability and adaptability)
 def generateStringsFiles(sampleFileNames, paramList, thesauriDir, bybloDir, 
-	reuse=[], verbose=False):
+	reuse=[], verbose=False, filesToCreate=[]):
+	savedFiles = []
 		
 	for fileName in sampleFileNames:
 		for paramStr in [paramSubstring(s) for s in paramList]:
@@ -101,33 +102,35 @@ def generateStringsFiles(sampleFileNames, paramList, thesauriDir, bybloDir,
 					(['', '.filtered']) if hasFiltered else ['.filtered'] ):
 					sourceFileName = inputFileName + paramStr + typeSuffix + filterSuffix
 					
-					## ...but only if needed
-					if "byblo_stats" in reuse and isfile(sourceFileName+".strings"):
-						if verbose:
-							print "   Reusing strings output file " + getParamSubstring(sourceFileName)
-					else:
-						if verbose:
-							print "   Creating strings output file " + getParamSubstring(sourceFileName)
-					
-						logFile = open(os.devnull, 'w') if not verbose else None
+					## only convert wanted files
+					if not filesToCreate or sourceFileName in filesToCreate:
+						## ...but only if needed
+						if "byblo_stats" in reuse and isfile(sourceFileName+".strings"):
+							if verbose:
+								print "   Reusing strings output file " + getParamSubstring(sourceFileName)
+						else:
+							if verbose:
+								print "   Creating strings output file " + getParamSubstring(sourceFileName)
 						
-						out = subprocess.call(abspath("./tools.sh") + " unindex-" + typeSuffix[1:] \
-							+ " -i " + sourceFileName
-							+ " -o " + sourceFileName + ".strings" 
-							+ (" -Xe "+inputFileName+paramStr+".entry-index" 
-								if typeSuffix != ".features" else "")
-							+ (" -Xf "+inputFileName+paramStr+".feature-index" 
-								if typeSuffix != ".entries" else "")
-							+ " -et JDBM",
-							shell = True, stdout = logFile, stderr = logFile)
-						
-						if  logFile: logFile.close()
-				
+							logFile = open(os.devnull, 'w') if not verbose else None
+							
+							out = subprocess.call(abspath("./tools.sh") + " unindex-" + typeSuffix[1:] \
+								+ " -i " + sourceFileName
+								+ " -o " + sourceFileName + ".strings" 
+								+ (" -Xe "+inputFileName+paramStr+".entry-index" 
+									if typeSuffix != ".features" else "")
+								+ (" -Xf "+inputFileName+paramStr+".feature-index" 
+									if typeSuffix != ".entries" else "")
+								+ " -et JDBM",
+								shell = True, stdout = logFile, stderr = logFile)
+							
+							if  logFile: logFile.close()
+						savedFiles.append(sourceFileName + ".strings")
 				## move back to execution directory
 				os.chdir(startDir)
 				if verbose:
 					print "   Moved back to " + os.getcwd()
-
+	return savedFiles
 
 ## Makes a graph nicer and clearer by adding a title, axes labels, a legend, limits on the axes (for an 
 ## exact fit or a "zoom"), a scientific notation (for large numbers)
@@ -869,12 +872,12 @@ def convertTimeRange(timesList, fixedUnit=None):
 	
 ## Deletes intermediary files needed for the statistics generation when they are in the list of item types (samples, 
 ## thesauri, event_stats, byblo_stats) that the user specified for deletion
-def deleteOnExit(deleteList, outputDirectory, sampleFiles=[], originalInputFile="", verbose=False):
-	if(deleteList != ["nothing"]):
-		for directory in deleteList:
-			os.system("rm -r " + join(outputDirectory, directory))
-			if verbose:
-				print "   Deleted directory " + directory
+#~ def deleteOnExit(deleteList, outputDirectory, sampleFiles=[], originalInputFile="", verbose=False):
+	#~ if(deleteList != ["nothing"]):
+		#~ for directory in deleteList:
+			#~ os.system("rm -r " + join(outputDirectory, directory))
+			#~ if verbose:
+				#~ print "   Deleted directory " + directory
 
 
 ## Prints an array or a dictionary with customizable start, end, line length and title
