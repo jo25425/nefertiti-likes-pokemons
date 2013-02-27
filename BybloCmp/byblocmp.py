@@ -69,7 +69,7 @@ class BybloCmp:
 	"""
 	
 	## Initialises the parameters of the module
-	def __init__(self, inputFile, baseThesaurus, bybloDir, storageDir, outputFile, verbose):
+	def __init__(self, inputFile, baseThesaurus, bybloDir, storageDir, outputFile, reuse, verbose):
 		
 		## input file for pre-processed data
 		self.inputFile = abspath(inputFile)
@@ -84,8 +84,11 @@ class BybloCmp:
 		## output file for  comparison results 
 		self.outputFile = abspath(outputFile) if not isdir(outputFile)\
 			else join(abspath(outputFile), "results.cmp")
+		## reuse option
+		self.reuse = reuse
 		## verbose option
 		self.verbose = verbose
+		
 		## sequence menu
 		self.iterationEndMenu = self.initIterationEndMenu()
 		## options menu
@@ -271,10 +274,12 @@ class BybloCmp:
 	
 	## Prepares the thesaurus that will be used as a base for later evaluation against WordNet. This thesaurus 
 	## is built using the entries appearing in the input file, and similarity scores computed from WordNet.
-	## return code indicating success/failure of the construction
+	## return code indicating success/failure of the run
 	def prepareBaseThesaurus(self):
 		## try opening the file
 		try:
+			if "baseThesaurus" not in self.reuse: 
+				raise IOError()
 			open(self.baseThesaurus, 'r').close()
 			self.printer.info("Specified base thesaurus ready.")
 			
@@ -287,40 +292,12 @@ class BybloCmp:
 				"\n       but it might take a while (up to several days).")
 			
 			## 1) list entries in input file with 2 first stages of Byblo
-			if not exists(self.storageDir): os.makedirs(self.storageDir)
-			tmpDir = join (self.storageDir, "tmp-thesauri")
-			if not exists(tmpDir): os.makedirs(tmpDir)
-			
-			## move to Byblo directory
-			startDir=abspath(os.getcwd())
-			os.chdir(self.bybloDir)
-			self.printer.info("Moved to " + os.getcwd())
-			
-			## execute Byblo in a subprocess
-			logFile = open(devnull, 'w')
-			out = subprocess.call(abspath("./byblo.sh ") + " -i " + self.inputFile + " -o " + tmpDir +\
-				" --stages enumerate,count", shell=True, stdout=logFile, stderr=logFile)
-			if logFile: logFile.close()
-			
-			## move back to initial directory
-			os.chdir(startDir)
-			self.printer.info("Moved back to " + os.getcwd())
-			
-			## stop here in case of fail
-			if out != 0:
-				self.printer.info("Byblo [enumerate,count] failed.\n       Fail Code: " + str(out))
-				return -1
-				
-			## rename files to include the parameter string in their name
-			base = join(tmpDir, basename(self.inputFile))
-			for ext in BYBLO_OUTPUT_EXTENSIONS:
-				filename = base + ext
-				if exists(filename):
-					newname = base + cmpstats.paramSubstring("") + ext
-					os.rename(filename, newname)
+			returnCode = self.runEnumerate()
+			if returnCode != 0: return returnCode
 				
 			## 2) convert them from indexes to strings
-			entriesFile = base+ "#.entries"
+			tmpDir = join (self.storageDir, "tmp-thesauri")
+			entriesFile = join(tmpDir, basename(self.inputFile)) + "#.entries"
 			savedFiles = cmpstats.generateStringsFiles(
 				[self.inputFile], 
 				[""], 
@@ -340,12 +317,53 @@ class BybloCmp:
 			os.system("rm -r " + tmpDir)
 			
 			self.printer.info("Base WordNet thesaurus created.")
-	
 		return 0
+	
+	
+	## Runs Byblo's first two stages (enumerate and count) in a subprocess, in order to list all of the
+	## different entries appearing in the input file. Also renames the files so that they reflect the absence
+	## of settings
+	## @return code indicating success/failure of the run
+	def runEnumerate(self):
+		if not exists(self.storageDir): 
+			os.makedirs(self.storageDir)
+		tmpDir = join (self.storageDir, "tmp-thesauri")
+		if not exists(tmpDir): 
+			os.makedirs(tmpDir)
+		
+		## move to Byblo directory
+		startDir=abspath(os.getcwd())
+		os.chdir(self.bybloDir)
+		self.printer.info("Moved to " + os.getcwd())
+		
+		## execute Byblo in a subprocess
+		logFile = open(devnull, 'w')
+		out = subprocess.call(abspath("./byblo.sh ") + " -i " + self.inputFile + " -o " + tmpDir +\
+			" --stages enumerate,count", shell=True, stdout=logFile, stderr=logFile)
+		if logFile: logFile.close()
+		
+		## move back to initial directory
+		os.chdir(startDir)
+		self.printer.info("Moved back to " + os.getcwd())
+		
+		## stop here in case of fail
+		if out != 0:
+			self.printer.info("Byblo [enumerate,count] failed.\n       Fail Code: " + str(out))
+			return -1
+			
+		## rename files to include the parameter string in their name
+		base = join(tmpDir, basename(self.inputFile))
+		for ext in BYBLO_OUTPUT_EXTENSIONS:
+			filename = base + ext
+			if exists(filename):
+				newname = base + cmpstats.paramSubstring("") + ext
+				os.rename(filename, newname)
+		return 0
+	
 	
 	## Runs Byblo in a subprocess, renames files produced so that they reflect the settings used,
 	## and consequently adds an entry to the record of iterations
-	## @return code indicating success/failure of the iteration
+	## @return code indicating success/failure of the run
 	def runByblo(self, parameters):
 		## create output directory when required
 		if not exists(self.storageDir):
@@ -693,6 +711,11 @@ if __name__=='__main__':
 	argParser.add_argument('-o', '--output', metavar='file', dest='outputFile',
 		action='store', default="./results.cmp",
 		help='output file for comparison results (default: "./results.cmp")')
+	## reuse option
+	argParser.add_argument('-r', '--reuse', metavar='list', dest='reuse',
+		action='store', default="baseThesaurus,bybloOutput",
+		help='comma-separated list of elements to reuse, "none" to rebuild everything ' +
+			'(default: [baseThesaurus, bybloOutput])')
 	## verbose option
 	argParser.add_argument('-v', '--verbose', dest='verbose', 
 		action='store_true', default=False,
@@ -700,7 +723,7 @@ if __name__=='__main__':
 		
 	a = argParser.parse_args()
 	bybloCmp = BybloCmp(a.inputFile, a.baseThesaurus, a.bybloDir, a.storageDir, 
-		a.outputFile, a.verbose)
+		a.outputFile, ','.split(a.reuse), a.verbose)
 	bybloCmp.run()
 	
 
