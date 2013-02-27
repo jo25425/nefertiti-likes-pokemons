@@ -190,7 +190,7 @@ class BybloCmp:
 			if checkingFunction(newVal):
 					
 				## if change of input file and current sequence not ended yet, end it
-				if attr == "inputFile" and self.record:
+				if attr in ["inputFile", "storageDir"] and self.record:
 					self.printer.info("The current sequence will be ended now.")
 					self.plotSequence()
 				
@@ -233,7 +233,7 @@ class BybloCmp:
 	def execution(self, args):
 		## prepare base thesaurus
 		self.printer.stage(1, 6, "Preparing base WordNet thesaurus for evaluation")
-		self.prepareBaseThesaurus()
+		returnCode = self.prepareBaseThesaurus()
 		if returnCode != 0: return True # if Byblo failed, end iteration
 		
 		## determine parameters to use
@@ -260,7 +260,7 @@ class BybloCmp:
 		self.plotIteration()
 		
 		## write to output file
-		self.printer.stage(6, 6, "Writing iteration summary", True)
+		self.printer.stage(6, 6, "Writing iteration summary")
 		self.writeIteration()
 		
 		## either continue or end current sequence and plot
