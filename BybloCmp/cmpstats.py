@@ -500,17 +500,17 @@ def generatePlots(statsDict, paramList, paramListUser, paramListAuto, paramValue
 	if not exists(graphsDir): os.makedirs(graphsDir)
 	fileBaseName = basename(fileName)
 	savedFiles = []
-
-	## create appropriate dictionary for each graph
-	fullStringsDict, singleParamDicts = decomposeDictionary(statsDict, paramList, 
+	
+	## create appropriate dictionary for each graph (sorted on parameter values)
+	fullStringsDict, singleParamDicts, paramValuesLists = decomposeDictionary(statsDict, paramList, 
 		paramListUser, paramListAuto, paramValuesLists)
 	
-	## all strings for chart on change 
-	if "graphs" in reuse and isfile(join(graphsDir, 'Param-strings-vs-change-'+ fileBaseName+'.pdf')):
+	## all strings for chart on similarity between iterations
+	if "graphs" in reuse and isfile(join(graphsDir, 'Param-strings-vs-iter-sim-'+ fileBaseName+'.pdf')):
 		if verbose: print "   Reusing param-strings-vs-change plot"
 	else:
 		if verbose: print "   Creating param-strings-vs-change plot"
-		savedFiles += createBarsAllParametersVsChange(
+		savedFiles += createBarsAllParametersVsIterSim(
 			paramList, statsDict, outputDir, fileBaseName, verbose, cut)
 	
 	## parameter strings for bar charts (no linear study possible)
@@ -523,7 +523,7 @@ def generatePlots(statsDict, paramList, paramListUser, paramListAuto, paramValue
 				if verbose: print "   Creating param-strings-vs-" + plotType + " plot"
 				f = {"files"	: createBarsParametersVsFiles,
 					"time"	: createBarsParametersVsTime,
-					"sim"	: createBarsParametersVsSim}[plotType]
+					"sim"	: createBarsParametersVsWNSim}[plotType]
 				savedFiles += f(paramListUser, fullStringsDict, outputDir, fileBaseName, verbose, cut)
 		
 	## parameter strings for plots (linear study possible)
@@ -545,14 +545,33 @@ def generatePlots(statsDict, paramList, paramListUser, paramListAuto, paramValue
 						
 						f = {"files"	: createPlotSingleParamVsFiles,
 							"time"	: createPlotSingleParamVsTime,
-							"sim"	: createPlotSingleParamVsSim}[plotType]
+							"sim"	: createPlotSingleParamVsWNSim}[plotType]
 						savedFiles += f(paramValues, singleParamDicts[paramKey][confKey], 
 							outputDir, fileBaseName, paramKey, confKey, verbose, cut)
 	return savedFiles
 	
 	
-##
-##
+## Produces dictionaries suitable to generate plots using...
+##		1) the main dictionary (statistics for everything in the order in which the parameter strings 
+##		were used), 
+##		2) three separate lists for all of the parameter strings, those that can be studied in relation to others,
+##		and those which are completely independant,
+##		3) the lists of values for each of the studied parameters.
+## The result is:
+##		1) a dictionary for independant parameter strings
+##			{ str1 : 	{ stat1 : 	[v1, v2, ...],
+##					   stat2 :	... },
+##			   str2 :	... }
+##		2) a dictionary for studiable parameter strings (fsorted following the ascending order of 
+## 		parameter values
+##			{ param1 : { conf1 :	{ stat1 : 	[v1, v2, ...],
+##					   			   stat2 :	... },
+##					     conf2 : ... },
+##			   param2 : ... }
+##		3) the lists of values, but this time sorted in ascending order
+## Therefore, as a result, everything is sorted so that it can be exploited in an efficient manner to 
+## plot the statistics.
+## @return userDict, singleParamVarDicts, paramValuesLists
 def decomposeDictionary(mainDict, allParamStrings, paramStringsUser, paramStringsAuto, 
 	paramValuesLists):
 	## PARAMETER STRINGS SPECIFIED BY THE USER
@@ -586,6 +605,8 @@ def decomposeDictionary(mainDict, allParamStrings, paramStringsUser, paramString
 				else:
 					confSettings.append('')
 				
+				sortedValuesList = sorted([value for value in targetValuesList])
+				
 				## build a dictionary for each of these configurations
 				singleParamDict = {}
 				for settings in confSettings:
@@ -600,10 +621,19 @@ def decomposeDictionary(mainDict, allParamStrings, paramStringsUser, paramString
 								in zip(mainDict[key], allParamStrings)
 								if paramStr in paramStringsAuto and 
 								sum([substring in paramStr for substring in settings]) == len(settings)]
+							
+							## sort dictionary so that it follows ascending order of parameter values
+							confDict[key]= [confDict[key][j] 
+								for j in [targetValuesList.index(paramValue) 
+								for paramValue in sortedValuesList]]
+					
 					singleParamDict['"'+' '.join(settings)+'"'] = confDict
 				singleParamVarDicts[string.upper(targetName)] = singleParamDict
-
-	return userDict, singleParamVarDicts
+	
+	## finally, sort lists of parameter values
+	paramValuesLists = [sorted(list) for list in paramValuesLists]
+	
+	return userDict, singleParamVarDicts, paramValuesLists
 
 
 ## Creates bar chart showing the relation between the parameters used and the result files obtained 
@@ -674,7 +704,7 @@ def createBarsParametersVsTime(paramList, statsDictionary, outputDirectory, grap
 ## Creates a bar chart showing the relation between the parameters used and the similarity of 
 ## the resultant thesaurus with WordNet
 ## No model: the parameters (x values) are not continuous data
-def createBarsParametersVsSim(paramList, statsDictionary, outputDirectory, graphName="", 
+def createBarsParametersVsWNSim(paramList, statsDictionary, outputDirectory, graphName="", 
 	verbose=False, cut=False):
 	## figure set up
 	f, (sim) = pl.subplots(1, 1)
@@ -692,48 +722,48 @@ def createBarsParametersVsSim(paramList, statsDictionary, outputDirectory, graph
 		label="sim function of parameters")
 		
 	decorateGraph(sim, "SImilarity with WordNet", "parameter string for Byblo", 
-		"% similarity", yLabelPos)
+		"similarity score", yLabelPos)
 	
 	sim.set_xticks(ind+len(paramList)*width*0.5)
 	sim.set_xticklabels(paramList, rotation=15, size='small')
 
 	## save figure
-	f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-sim-' + graphName + '.pdf'))
+	f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-WN-sim-' + graphName + '.pdf'))
 	pl.close()
-	return [join(outputDirectory, "graphs", 'Param-strings-vs-sim-' + graphName + '.pdf')]
+	return [join(outputDirectory, "graphs", 'Param-strings-vs-WN-sim-' + graphName + '.pdf')]
 
 
-## Creates a abar chart showing the relation between the parameters used and the amount of change 
-## they generate from one thesaurus to the next one (next iteration)
+## Creates a abar chart showing the relation between the parameters used and the similarity there is
+## between one thesaurus and the next one (next iteration)
 ## No model: the parameters don't follow any rule and appear in simple chronological order
-def createBarsAllParametersVsChange(paramList, statsDictionary, outputDirectory, 
+def createBarsAllParametersVsIterSim(paramList, statsDictionary, outputDirectory, 
 	graphName="", verbose=False, cut=False):
 	## figure set up
-	f, (change) = pl.subplots(1, 1)
+	f, (sim) = pl.subplots(1, 1)
 	f.set_size_inches(8.3, 5.8) ## set figure size to A5
 	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## margins
-	f.suptitle(graphName+'\nVariation of the parameters - Impact on change in thesaurus', 
+	f.suptitle(graphName+'\nVariation of the parameters - Impact on similarity between iterations', 
 		fontsize=14, fontweight='bold')
 	yLabelPos = [-0.1, 0.5] 
 	
 	## REPRESENT THE DATA
 	ind = np.arange(len(paramList))
 	width = 1.0 
-	changeFromPrev = statsDictionary["Change_From_Previous"][1:] + [0]
-	change.bar(ind+width*0.5, changeFromPrev, width=width, align='center', color='goldenrod', 
-		label="change from parameters")
+	simWithPrev = statsDictionary["Similarity_With_Previous"][1:] + [0]
+	sim.bar(ind+width*0.5, simWithPrev, width=width, align='center', color='goldenrod', 
+		label="sim between iter")
 		
-	decorateGraph(change, "Change in resultant thesaurus due to Byblo parameters", 
-		"parameter string for Byblo", "% change", yLabelPos)
+	decorateGraph(sim, "SImilarity between resultant thesauri", 
+		"parameter string for Byblo", "similarity score", yLabelPos)
 	
 	## modify here!
-	change.set_xticks(ind*width)
-	change.set_xticklabels(paramList, rotation=15, size='small')
+	sim.set_xticks(ind*width)
+	sim.set_xticklabels(paramList, rotation=15, size='small')
 
 	## save figure
-	f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-change-' + graphName + '.pdf'))
+	f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-iter-sim-' + graphName + '.pdf'))
 	pl.close()
-	return [join(outputDirectory, "graphs", 'Param-strings-vs-change-' + graphName + '.pdf')]
+	return [join(outputDirectory, "graphs", 'Param-strings-vs-iter-sim-' + graphName + '.pdf')]
 
 
 ## Creates plots showing the relation between the parameters used and the result files obtained 
@@ -805,7 +835,7 @@ def createPlotSingleParamVsTime(paramList, statsDictionary, outputDirectory, gra
 ## Creates a plot showing the relation between the variation of ONE chosen parameter and similarity of 
 ## the resultant thesaurus with WordNet
 ## MODEL?????????????????????????????
-def createPlotSingleParamVsSim(paramList, statsDictionary, outputDirectory, graphName="",
+def createPlotSingleParamVsWNSim(paramList, statsDictionary, outputDirectory, graphName="",
 	paramName="", confName="", verbose=False, cut=False):
 	
 	## figure set up
@@ -822,14 +852,14 @@ def createPlotSingleParamVsSim(paramList, statsDictionary, outputDirectory, grap
 		label="sim function of "+paramName, alpha=0.6)
 		
 	decorateGraph(sim, 'Similarity with WordNet', string.lower(paramName)+" value", 
-		"% similarity", yLabelPos)
+		"similarity score", yLabelPos)
 	
 	## save figure
 	f.savefig(join(outputDirectory, "graphs", 
-		paramName + '-vs-sim'+'['+confName+']'+'-' + graphName + '.pdf'))
+		paramName + '-vs-WN-sim'+'['+confName+']'+'-' + graphName + '.pdf'))
 	pl.close()
 	return [join(outputDirectory, "graphs", 
-		paramName + '-vs-sim'+'['+confName+']'+'-' + graphName + '.pdf')]
+		paramName + '-vs-WN-sim'+'['+confName+']'+'-' + graphName + '.pdf')]
 	
 	
 ## Converts a list of file sizes to a target unit (bytes system), either specified or determined based on the average size

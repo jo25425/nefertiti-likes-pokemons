@@ -69,7 +69,13 @@ class BybloCmp:
 	"""
 	
 	## Initialises the parameters of the module
-	def __init__(self, inputFile, baseThesaurus, bybloDir, storageDir, outputFile, reuse, verbose):
+	def __init__(self, inputFile, baseThesaurus, bybloDir, storageDir, outputFile, 
+		planningFile, reuse, cut, verbose):
+		
+		## parser for input
+		self.parser = inputchecking.Parser()
+		## printer for output
+		self.printer = outputformatting.Printer(True)
 		
 		## input file for pre-processed data
 		self.inputFile = abspath(inputFile)
@@ -84,8 +90,12 @@ class BybloCmp:
 		## output file for  comparison results 
 		self.outputFile = abspath(outputFile) if not isdir(outputFile)\
 			else join(abspath(outputFile), "results.cmp")
+		## planning file for the preparation of iteration parameters
+		self.iterPlanning = self.planIterations(planningFile)
 		## reuse option
 		self.reuse = reuse
+		## cut option
+		self.cut = cut
 		## verbose option
 		self.verbose = verbose
 		
@@ -97,10 +107,27 @@ class BybloCmp:
 		self.mainMenu = self.initMainMenu()
 		## record of iterations
 		self.record = []
-		## parser for input
-		self.parser = inputchecking.Parser()
-		## printer for output
-		self.printer = outputformatting.Printer(True)
+	
+	
+	## Reads the planning file to determine which parameter strings will be used in the next iterations,
+	##	and how they form one or more sequences.
+	## The planning file is read line by line:
+	##		- each line is a single parameter string for  a single iteration,
+	##		- an empty line represents a separation between two distinct sequences.
+	## @return sequences (corresponding parameters)
+	def planIterations(self, planningFile):
+		if not planningFile: return
+		sequences = []
+		iterations = []
+		for parameters in [ line[:line.index('\n')] for line in open(planningFile, 'r') ] + [""]:
+			if parameters: # parameters => continue sequence
+				if self.parser.checkBybloSettings(parameters, type='studied'):
+					iterations.append(parameters)
+			else: # empty line => end sequence
+				sequences.append(iterations)
+				iterations = []
+		return sequences
+	
 	
 	## Run
 	def run(self):
@@ -108,8 +135,10 @@ class BybloCmp:
 		stime = time.time()
 		self.printer.mainTitle("Byblo Configuration Helper")
 		
-		## direct operations from main menu
-		self.mainMenu.waitForInput()
+		## planned mode
+		if self.iterPlanning: self.execution(None)
+		## interactive mode: direct operations from main menu
+		else: self.mainMenu.waitForInput()
 		
 		etime = time.time()
 		self.printer.info("Execution took "+str(etime-stime)+"seconds")
@@ -241,13 +270,10 @@ class BybloCmp:
 		
 		## determine parameters to use
 		self.printer.stage(2, 6, "Determining parameters")
-		"""
-			for now directly, later from planned stuff... or not? (could fairly easily just read from a file)
-		"""
-		while True:
-			parameters = raw_input("Parameters for this iteration of Byblo? ")
-			if self.parser.checkBybloSettings(parameters, type='studied'): break
-			else: print ""
+		parameters = self.determineParameters()
+		if not parameters: 
+			self.mainMenu.waitForInput()
+			return # back to interactive mode with main menu
 		
 		## run Byblo
 		self.printer.stage(3, 6, "Running Byblo")
@@ -266,14 +292,46 @@ class BybloCmp:
 		self.printer.stage(6, 6, "Writing iteration summary")
 		self.writeIteration()
 		
-		## either continue or end current sequence and plot
-		self.iterationEndMenu.waitForInput()
+		## planned mode
+		if self.iterPlanning:
+			if not self.iterPlanning[0]: # no more iteration planned for this sequence
+				self.plotSequence() # end the sequence
+			else: self.execution(None) # otherwise next iteration
+		## interactive mode
+		else: self.iterationEndMenu.waitForInput()
 		
 		return True # to stay in this level's menu
 	
 	
-	## Prepares the thesaurus that will be used as a base for later evaluation against WordNet. This thesaurus 
-	## is built using the entries appearing in the input file, and similarity scores computed from WordNet.
+	## Determines the parameters to use for the current iteration, either by using those read from the
+	## planning file, or by prompting the user.
+	## If the parameter strings for planned iteration are all consumed, the function simply returns, in order
+	## to abort the iteration and give the control to a new main menu.
+	## @return parameters or None
+	def determineParameters(self):
+		while True:
+			## planned mode
+			if self.iterPlanning:
+				if self.iterPlanning[0]:
+					parameters = self.iterPlanning[0][0]
+					self.iterPlanning[0].remove(parameters)
+					break
+				else:
+					self.iterPlanning.remove(self.iterPlanning[0])
+					## planning file entirely used
+					if not self.iterPlanning: return
+						
+			## interactive mode
+			else:
+				parameters = raw_input("Parameters for this iteration of Byblo? ")
+				if self.parser.checkBybloSettings(parameters, type='studied'): break
+				else: print ""
+		return parameters
+	
+	
+	## Prepares the thesaurus that will be used as a base for later evaluation against WordNet. This 
+	## thesaurus is built using the entries appearing in the input file, and similarity scores computed
+	##	from WordNet.
 	## return code indicating success/failure of the run
 	def prepareBaseThesaurus(self):
 		## try opening the file
@@ -322,7 +380,7 @@ class BybloCmp:
 	
 	## Runs Byblo's first two stages (enumerate and count) in a subprocess, in order to list all of the
 	## different entries appearing in the input file. Also renames the files so that they reflect the absence
-	## of settings
+	## of settings.
 	## @return code indicating success/failure of the run
 	def runEnumerate(self):
 		if not exists(self.storageDir): 
@@ -365,57 +423,84 @@ class BybloCmp:
 	## and consequently adds an entry to the record of iterations
 	## @return code indicating success/failure of the run
 	def runByblo(self, parameters):
-		## create output directory when required
-		if not exists(self.storageDir):
-			os.makedirs(self.storageDir)
+		base = join(self.storageDir, "thesauri", basename(self.inputFile))
+		runTime = -1
+		
+		## reuse existing files and retreve the running time to recreate the appropriate record
+		if "bybloOutput" in self.reuse and self.existBybloOutput(parameters, base):
+			file = open(base + cmpstats.paramSubstring(parameters) + ".runtime", 'r')
+			runTime = float(file.readline())
+			self.printer.info("Reusing Byblo output.")
+		
+		## run Byblo to create the appropriate record for this iteration
+		else:
+			## create output directory when required
+			if not exists(self.storageDir): os.makedirs(self.storageDir)
+				
+			## create thesauri directory when required
+			thesauriDir = join (self.storageDir, "thesauri")
+			if not exists(thesauriDir): os.makedirs(thesauriDir)
 			
-		## create thesauri directory when required
-		thesauriDir = join (self.storageDir, "thesauri")
-		if not exists(thesauriDir):
-			os.makedirs(thesauriDir)
-		
-		## move to Byblo directory
-		startDir=abspath(os.getcwd())
-		os.chdir(self.bybloDir)
-		self.printer.info("Moved to " + os.getcwd())
-		
-		## execute Byblo in a subprocess
-		logFile = open(devnull, 'w') if not self.verbose else None
-		stime = time.time()
-		out = subprocess.call(abspath("./byblo.sh ") + " -i " + self.inputFile + " -o " + thesauriDir +\
-			" "+ parameters, shell=True, stdout=logFile, stderr=logFile)
-		etime = time.time()
-		if logFile: logFile.close()
-		
-		## move back to initial directory
-		os.chdir(startDir)
-		self.printer.info("Moved back to " + os.getcwd())
-		
-		## stop here in case of fail
-		if out != 0:
-			self.printer.info("Byblo failed with settings: " + parameters + "\n       Fail Code: " + str(out))
-			return -1
-		
-		## rename files to include the parameter string in their name
-		base = join(thesauriDir, basename(self.inputFile))
-		for ext in BYBLO_OUTPUT_EXTENSIONS:
-			filename = base + ext
-			if exists(filename):
-				newname = base + cmpstats.paramSubstring(parameters) + ext
-				os.rename(filename, newname)
+			## move to Byblo directory
+			startDir=abspath(os.getcwd())
+			os.chdir(self.bybloDir)
+			self.printer.info("Moved to " + os.getcwd())
+			
+			## execute Byblo in a subprocess
+			logFile = open(devnull, 'w') if not self.verbose else None
+			initTime = time.time()
+			out = subprocess.call(abspath("./byblo.sh ") + " -i " + self.inputFile + " -o " + thesauriDir +\
+				" "+ parameters, shell=True, stdout=logFile, stderr=logFile)
+			runTime = time.time() - initTime
+			if logFile: logFile.close()
+			
+			## move back to initial directory
+			os.chdir(startDir)
+			self.printer.info("Moved back to " + os.getcwd())
+			
+			## stop here in case of fail
+			if out != 0:
+				self.printer.info("Byblo failed with settings: " + parameters + "\n       Fail Code: " + str(out))
+				return -1
+			else:
+				self.printer.info("Execution took " + str(runTime) + "seconds.")
+			
+			## rename files to include the parameter string in their name and saves running time
+			self.renameBybloOutputFiles(parameters, base)
+			open(base + cmpstats.paramSubstring(parameters) + ".runtime", 'w').write(str(runTime))
 		
 		## update record
 		aboutIteration = {
 			"input" 		: self.inputFile,
 			"settings" 	: parameters if parameters else 'None',
 			"output" 		: self.storageDir,
-			"runtime"	: etime-stime,
+			"runtime"	: runTime,
 			"sim-with-WN"	: 'None',
-			"change-from-prev": 'None'
+			"sim-with-prev": 'None'
 			}
 		self.record.append(aboutIteration)
 		return 0
 
+
+	## Predicate used to determine whether ALL of the output files for Byblo with a given parameter 
+	## string already exist or not. If so, they can be reused. If not, a single missing file is enough to 
+	## require Byblo to be run again.
+	## @return boolean
+	def existBybloOutput(self, parameters, base):
+		for ext in BYBLO_OUTPUT_EXTENSIONS + [".runtime"]:
+			if not exists(base + cmpstats.paramSubstring(parameters) + ext): 
+				return False
+		return True
+	
+	## Renames ALL of the output files of Byblo so that their name includes the parameter string used
+	## by Byblo to create them.
+	def renameBybloOutputFiles(self, parameters, base):
+		for ext in BYBLO_OUTPUT_EXTENSIONS:
+			filename = base + ext
+			if exists(filename):
+				newname = base + cmpstats.paramSubstring(parameters) + ext
+				os.rename(filename, newname)
+	
 
 	## Evaluates the result of this last iteration of Byblo against...
 	## 1) WordNet, in order to have a fixed reference for comparison
@@ -443,7 +528,7 @@ class BybloCmp:
 			
 			## write evaluation result to record
 			self.record[-1]["sim-with-WN"] =  \
-				100.0 * float(open(evalOutput, 'r').readlines()[0].split('\t')[0])
+				float(open(evalOutput, 'r').readlines()[0].split('\t')[0])
 			
 		## compute similarity with previously built thesaurus
 		if len(self.record) < 2:
@@ -463,8 +548,8 @@ class BybloCmp:
 				evalTask2.run()
 				
 				## write evaluation result to record
-				self.record[-1]["change-from-prev"] = \
-					100.0 * (1.0 - float(open(evalOutput, 'r').readlines()[0].split('\t')[0]))
+				self.record[-1]["sim-with-prev"] = \
+					float(open(evalOutput, 'r').readlines()[0].split('\t')[0])
 				
 		## delete temporary file
 		os.remove(evalOutput)
@@ -483,22 +568,48 @@ class BybloCmp:
 	def plotIteration(self):
 		## retrieve settings strings
 		findSettings = lambda dict: dict["settings"] if dict["settings"] != 'None' else ''
-		paramString = findSettings(self.record[-1])
-		## generate histograms
-		self.record[-1]["histograms"] = cmpstats.generateHistograms(
-			[self.inputFile], 	# sampleFileNames
-			[paramString],	# paramList
-			self.storageDir, 	# outputDir
-			self.bybloDir, 		# bybloDir
-			[], 				# reuse
-			False, 			# verbose
-			False)			# cut
+		parameters = findSettings(self.record[-1])
+		base = join(self.storageDir, "graphs", "Histogram-" + basename(self.inputFile))
+		
+		## reuse histograms
+		if "histograms" in self.reuse and self.existHistograms(parameters, base):
+			self.record[-1]["histograms"] = [base + cmpstats.paramSubstring(parameters) \
+				+ ext + ".pdf" for ext in [".entries", ".features", ".events"]]
+			self.printer.info("Reusing histograms.")
 			
-		self.printer.info("Histograms created in subdirectory \"graphs\" of main output directory.")
+		## generate histograms
+		else:
+			self.record[-1]["histograms"] = cmpstats.generateHistograms(
+				[self.inputFile], 	# sampleFileNames
+				[parameters],		# paramList
+				self.storageDir, 	# outputDir
+				self.bybloDir, 		# bybloDir
+				verbose=self.verbose,
+				cut=self.cut)
+				
+			self.printer.info("Histograms created in subdirectory \"graphs\" of main output directory.")
 	
 	
-	##
-	##
+	## Predicate used to determine whether ALL of the histograms for a given parameter string already
+	## exist or not. If so, they can be reused. If not, a single missing histogram is enough to require
+	## all histograms to be drawn again.
+	## @return boolean
+	def existHistograms(self, parameters, base):
+		for ext in [".entries", ".features", ".events"]:
+			if not exists(base + cmpstats.paramSubstring(parameters) + ext + ".pdf"): 
+				return False
+		return True
+	
+	
+	## Writes information about an iteration after it finishes.
+	## More specifically, appends to the result file:
+	##		- the iteration name (i.e. "Iteration n"),
+	##		- the parameters used,
+	##		- the running time of Byblo for these parameters,
+	##		- the similarity of the resultant thesaurus with WordNet,
+	##		- the similarity of the resultant thesaurus with the one from the previous iteration,
+	##		- the name of the resultant thesaurus,
+	##		- the list of the file names of the histograms corresponding to this iteration.
 	def writeIteration(self):
 		findThesaurus = lambda rec: join(rec["output"], "thesauri",
 					basename(rec["input"])\
@@ -518,17 +629,19 @@ class BybloCmp:
 			out("%-25s" % "Running time: " + 
 				"%.2f" % self.record[-1]["runtime"] + " seconds")
 			out("%-25s" % "Similarity with WordNet: " +
-				"%.2f" % self.record[-1]["sim-with-WN"] + " %")
-			out("%-25s" % "Change from previous: " + 
-				(("%.2f" % self.record[-1]["change-from-prev"] + " %") 
-				if type(self.record[-1]["change-from-prev"]) == float
-				else str(self.record[-1]["change-from-prev"])))
+				"%.5f" % self.record[-1]["sim-with-WN"])
+			out("%-25s" % "SImilarity with previous: " + 
+				(("%.5f" % self.record[-1]["sim-with-prev"]) 
+				if type(self.record[-1]["sim-with-prev"]) == float
+				else str(self.record[-1]["sim-with-prev"])))
 			out("%-25s" % "Resultant thesaurus: " + findThesaurus(self.record[-1]))
 			
 			out("Corresponding graphs:")
 			for histogram in self.record[-1]["histograms"]:
 				out(' * ' + histogram)
 			out('') # empty line
+			
+		self.printer.info("Iteration record saved in " + basename(self.outputFile) + ".")
 
 
 	## Writes information about a sequence of iterations when it is started.
@@ -568,26 +681,38 @@ class BybloCmp:
 		## build a dictionary containing all the wanted statistics
 		statsDict = self.recordToDictionary()
 		self.printer.lines( statsDict )
-		allStrings, stringsForCharts, stringsForPlots, paramDict = self.sortParameterStrings()
 		
-		## generate plots
-		self.record[-1]["plots"] = cmpstats.generatePlots(
-			statsDict,			# statsDict
-			allStrings,			# paramList 
-			stringsForCharts,		# paramListUser 
-			stringsForPlots,		# paramListAuto
-			paramDict,			# paramValuesLists
-			self.inputFile,			# fileName
-			self.storageDir,		# outputDir
-								# reuse=[]
-			verbose=True)		# verbose=False
-								# cut=False
-	
-		self.printer.info("Plots created in subdirectory \"graphs\" of main output directory.")
-		self.writeSequenceEnd()
+		if len(self.record) < 2:
+			self.printer.info("Sequence plotting only possible from the second iteration. Skipped.")
+		else:
+			allStrings, stringsForCharts, stringsForPlots, paramDict = self.sortParameterStrings()
+			
+			## generate plots
+			self.record[-1]["plots"] = cmpstats.generatePlots(
+				statsDict,			# statsDict
+				allStrings,			# paramList 
+				stringsForCharts,		# paramListUser 
+				stringsForPlots,		# paramListAuto
+				paramDict,			# paramValuesLists
+				self.inputFile,			# fileName
+				self.storageDir,		# outputDir
+				verbose=self.verbose,
+				cut=self.cut)
+		
+			self.printer.info("Plots created in subdirectory \"graphs\" of main output directory.")
+			self.writeSequenceEnd()
+		
 		self.record = [] # reinitialise record for new sequence
 		
-		return False # to go back to main menu (after question)
+		## planned mode
+		if self.iterPlanning: # parameters read from file
+			self.iterPlanning.remove(self.iterPlanning[0]) # remove ended sequence
+			## sequences left => skip main menu 
+			if self.iterPlanning: self.execution(None)
+			## no sequences left => back to main menu
+			else: self.mainMenu.waitForInput()
+		
+		return False # to go back to main menu
 	
 	
 	## Produces from the record a dictionary containing some statistics for the sequence ending:
@@ -613,7 +738,7 @@ class BybloCmp:
 		
 		## compute statistics regarding output (once per iteration)
 		nbFilteredEntries, nbFilteredFeatures, nbFilteredEvents, nbFilteredNeighbourSets = [], [], [], []
-		runTime, simWithWN, changeFromPrev = [], [], []
+		runTime, simWithWN, simWithPrev = [], [], []
 		for iteration in self.record:
 			startFileName = join(self.storageDir, "thesauri", basename(self.inputFile))\
 				+ cmpstats.paramSubstring(findSettings(iteration))
@@ -624,7 +749,7 @@ class BybloCmp:
 			nbFilteredNeighbourSets.append( countLines(startFileName + ".sims.neighbours") )
 			runTime.append( iteration["runtime"] )
 			simWithWN.append( iteration["sim-with-WN"] )
-			changeFromPrev.append( iteration["change-from-prev"] )
+			simWithPrev.append( iteration["sim-with-prev"] )
 		
 		## add them to thr dictionary
 		statsDict["Number_Of_Lines_In_File_.entries.filtered"] = nbFilteredEntries
@@ -633,7 +758,7 @@ class BybloCmp:
 		statsDict["Number_Of_Lines_In_File_.sims.neighbours"] = nbFilteredNeighbourSets
 		statsDict["Byblo_Run_Time"] = runTime
 		statsDict["Similarity_With_WordNet"] = simWithWN
-		statsDict["Change_From_Previous"] = changeFromPrev
+		statsDict["Similarity_With_Previous"] = simWithPrev
 
 		return statsDict
 	
@@ -677,15 +802,17 @@ class BybloCmp:
 	
 	
 	## Writes information about a sequence of iterations when it is ended.
-	## More specifically, appends to the results file the file names of all the plots corresponding to 
-	## this sequence.
+	## More specifically, appends to the results file the file names of all the plots corresponding to this
+	## sequence.
 	def writeSequenceEnd(self):
-		with open(self.outputFile, 'a') as output:
-			out = lambda s : output.write(s + '\n')
-			out("Corresponding graphs:")
-			for plot in self.record[-1]["plots"]:
-				out(' * ' + plot)
-			out('') # empty line
+		if self.record[-1]["plots"]:
+			with open(self.outputFile, 'a') as output:
+				out = lambda s : output.write(s + '\n')
+				out("Corresponding graphs:")
+				for plot in self.record[-1]["plots"]:
+					out(' * ' + plot)
+				out('') # empty line
+		self.printer.info("Sequence record saved in " + basename(self.outputFile) + ".")
 	
 ## Parses a command-line.
 if __name__=='__main__':
@@ -695,7 +822,7 @@ if __name__=='__main__':
 	argParser.add_argument(metavar='file', dest='inputFile', action='store', 
 		help='input file for preprocessed data')
 	## base WordNet thesaurus for evaluation against WordNet 
-	argParser.add_argument('-th', '--thesaurus', metavar='file', dest='baseThesaurus',
+	argParser.add_argument('-t', '--thesaurus', metavar='file', dest='baseThesaurus',
 		action='store',
 		help='base WordNet thesaurus for evaluation against WordNet (specific to input) ' +
 			'(default: input file name + \".WN\")')
@@ -711,11 +838,20 @@ if __name__=='__main__':
 	argParser.add_argument('-o', '--output', metavar='file', dest='outputFile',
 		action='store', default="./results.cmp",
 		help='output file for comparison results (default: "./results.cmp")')
+	## planning file for the preparation of iteration parameters
+	argParser.add_argument('-p', '--planning', metavar='file', dest='iterPlanning',
+		action='store',
+		help='planning file for the preparation of iteration parameters, each line being one of the ' +
+			'parameter strings to use and empty lines separating sequences (default: None)')
 	## reuse option
 	argParser.add_argument('-r', '--reuse', metavar='list', dest='reuse',
-		action='store', default="baseThesaurus,bybloOutput",
-		help='comma-separated list of elements to reuse, "none" to rebuild everything ' +
-			'(default: [baseThesaurus, bybloOutput])')
+		action='store', default="baseThesaurus,bybloOutput,histograms",
+		help='comma-separated list of elements to reuse (histograms only reused when not cut), ' +
+			'"none" to rebuild everything (default: [baseThesaurus, bybloOutput, histograms])')
+	## cut option
+	argParser.add_argument('-c', '--cut', dest='cut',
+		action='store_true', default=False,
+		help='save all graphs/subgraphs in separate files (default: False)')
 	## verbose option
 	argParser.add_argument('-v', '--verbose', dest='verbose', 
 		action='store_true', default=False,
@@ -723,7 +859,7 @@ if __name__=='__main__':
 		
 	a = argParser.parse_args()
 	bybloCmp = BybloCmp(a.inputFile, a.baseThesaurus, a.bybloDir, a.storageDir, 
-		a.outputFile, ','.split(a.reuse), a.verbose)
+		a.outputFile, a.iterPlanning, a.reuse.split(','), a.cut, a.verbose)
 	bybloCmp.run()
 	
 
