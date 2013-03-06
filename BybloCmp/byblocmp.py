@@ -33,7 +33,7 @@ __author__ = "Joanne Robert"
 __copyright__ = "Copyright (c) 2012, University of Sussex"
 __credits__ = ["Joanne Robert"]
 __license__ = "3-clause BSD"
-__version__ = "1.0"
+__version__ = "2.0"
 __maintainer__ = "Joanne Robert"
 __email__ = "jr317@sussex.ac.uk"
 __status__ = "Development"
@@ -52,6 +52,7 @@ import thesauto
 import bybloeval
 import cmpstats
 
+
 ## global variable holding extensions for output files of Byblo
 BYBLO_OUTPUT_EXTENSIONS= [	".entries", ".entries.filtered", 
 						".entry-index.d.0", ".entry-index.i.0",
@@ -63,7 +64,6 @@ BYBLO_OUTPUT_EXTENSIONS= [	".entries", ".entries.filtered",
 					]
 
 class BybloCmp:
-	
 	"""
 	Compare methods for the construction of a disitributional thesaurus
 	"""
@@ -79,7 +79,7 @@ class BybloCmp:
 		
 		## input file for pre-processed data
 		self.inputFile = abspath(inputFile)
-		## base WordNet thesaurus for evaluation against WordNet 
+		## base WordNet thesaurus for evaluation against WordNet
 		self.baseThesaurus = self.inputFile + ".WN" if not baseThesaurus\
 			else (abspath(baseThesaurus) if not isdir(baseThesaurus)
 			else join(abspath(baseThesaurus), basename(self.inputFile) + ".WN"))
@@ -90,8 +90,8 @@ class BybloCmp:
 		## output file for  comparison results 
 		self.outputFile = abspath(outputFile) if not isdir(outputFile)\
 			else join(abspath(outputFile), "results.cmp")
-		## planning file for the preparation of iteration parameters
-		self.iterPlanning = self.planIterations(planningFile)
+		## planning of iteration parameters
+		self.iterPlanning = self.plannedIterations(planningFile)
 		## reuse option
 		self.reuse = reuse
 		## cut option
@@ -110,12 +110,12 @@ class BybloCmp:
 	
 	
 	## Reads the planning file to determine which parameter strings will be used in the next iterations,
-	##	and how they form one or more sequences.
+	## and how they form one or more sequences.
 	## The planning file is read line by line:
 	##		- each line is a single parameter string for  a single iteration,
 	##		- an empty line represents a separation between two distinct sequences.
 	## @return sequences (corresponding parameters)
-	def planIterations(self, planningFile):
+	def plannedIterations(self, planningFile):
 		if not planningFile: return
 		sequences = []
 		iterations = []
@@ -135,14 +135,11 @@ class BybloCmp:
 		stime = time.time()
 		self.printer.mainTitle("Byblo Configuration Helper")
 		
-		## planned mode
-		if self.iterPlanning: self.execution(None)
-		## interactive mode: direct operations from main menu
-		else: self.mainMenu.waitForInput()
+		self.mainMenu.waitForInput()
 		
 		etime = time.time()
 		self.printer.info("Execution took "+str(etime-stime)+"seconds")
-		
+	
 	
 	## Creates the main menu.
 	## It allows to navigate in the program, accessing all available functionalities."
@@ -152,15 +149,16 @@ class BybloCmp:
 			Choice(1, description="Execution of Byblo iterations",
 				## execution function
 				handler=self.execution),
-			Choice(2, description="Iterations planning"),
-			Choice(3, description="Comparison results"),
-			Choice(4, description="Help (about Byblo usage)",
+			Choice(2, description="Comparison results",
+				## function displaying output file content
+				handler=self.displayComparisonResults),
+			Choice(3, description="Help (about Byblo usage)",
 				## function displaying Byblo help
 				handler=self.displayBybloHelp),
-			Choice(5, description="Options", 
+			Choice(4, description="Options", 
 				## directly access the OPTIONS submenu
 				subMenu=self.optionsMenu),
-			Choice(6, description="Exit", 
+			Choice(5, description="Exit", 
 				## function returning a 'False' to exit this menu
 				handler=lambda anything:False)
 		]
@@ -176,21 +174,30 @@ class BybloCmp:
 		isDir = lambda str:True
 		
 		## Displays the current  value of an option.
-		formatVal =  lambda str: "\n\t\t[" + str + "]"
+		formatVal =  lambda string: "\n\t\t" + str(string) + ""
 		
 		optionsChoices = [
 			Choice(1, description="Input file for pre-processed data" + formatVal(self.inputFile),
-				value=[isFile, 1,  "inputFile"], handler=self.changeOption),
+				value=[self.parser.isFile, 1,  "inputFile", True], handler=self.changeOption),
 			Choice(2, description="base WordNet file for evaluation against WordNet" 
 				+ formatVal(self.baseThesaurus),
-				value=[isFile, 2,  "inputFile"], handler=self.changeOption),
+				value=[self.parser.isFile, 2,  "baseThesaurus", False], handler=self.changeOption),
 			Choice(3, description="Location of the Byblo directory" + formatVal(self.bybloDir),
-				value=[isDir, 3, "bybloDir"], handler=self.changeOption),
+				value=[self.parser.isDir, 3, "bybloDir", True], handler=self.changeOption),
 			Choice(4, description="Storage directory for Byblo output" + formatVal(self.storageDir),
-				value=[isDir, 4, "storageDir"], handler=self.changeOption),
+				value=[self.parser.isDir, 4, "storageDir", False], handler=self.changeOption),
 			Choice(5, description="Output file for comparison results" + formatVal(self.outputFile),
-				value=[isFile, 5, "outputFile"], handler=self.changeOption),
-			Choice(6, description="Back to main menu", handler=lambda anything:False)
+				value=[self.parser.isFile, 5, "outputFile", False], handler=self.changeOption),
+			Choice(6, description="Planning of iteration parameters (enter planning file)" 
+				+ formatVal(self.iterPlanning),
+				value=[self.parser.isFile, 6, "iterPlanning", True], handler=self.changeOption),
+			Choice(7, description="Cut option" + formatVal(self.cut),
+				value=[None, 7, "cut", False], handler=self.changeOption),
+			Choice(8, description="Reuse option" + formatVal(self.reuse),
+				value=[self.parser.isValidReuse, 8, "reuse", False], handler=self.changeOption),
+			Choice(9, description="Verbose option" + formatVal(self.verbose),
+				value=[None, 9, "verbose", False], handler=self.changeOption),			
+			Choice(10, description="Back to main menu", handler=lambda anything:False)
 		]
 		return Menu("Options Menu", optionsChoices, "What do you want to change?")
 	
@@ -213,29 +220,55 @@ class BybloCmp:
 	## Changes one of the options.
 	## Only produces correct values that are accepted by external verifiers (type/file/parameters)
 	def changeOption(self, args):
-		checkingFunction, selector, attr = args # separate function and attribute name
+		checkingFunction, selector, attr, required = args # separate function and attribute name
 		oldVal = getattr(self, attr) # store old value
-		choiceIndex = selector-1 # determine option index in list of choices
-			
-		while True:
-			newVal = raw_input("\nNew value? ")
-			if checkingFunction(newVal):
+		choiceIndex = selector - 1 # determine option index in list of choices
+		
+		## A - booleans
+		if attr in ["cut", "verbose"]:
+			newVal = not oldVal
+		## B - other types (file, dir, list)
+		else:
+			while True:
+				newVal = raw_input("\nNew value? ")
+				## absolute paths only for files and directories
+				if checkingFunction in [self.parser.isDir, self.parser.isFile]:
+					newVal = abspath(newVal)
 					
-				## if change of input file and current sequence not ended yet, end it
-				if attr in ["inputFile", "storageDir"] and self.record:
-					self.printer.info("The current sequence will be ended now.")
-					self.plotSequence()
-				
-				## modify corresponding option
-				setattr(self, attr, newVal)
-				
-				## update options menu
-				setattr(self.optionsMenu.choices[choiceIndex], "description", 
-					self.optionsMenu.choices[choiceIndex].description.replace(oldVal, newVal))
-				break
-			else:
-				print "Invalid value."
+				if checkingFunction(newVal, required=required): break
+				else: print "Invalid value."
+		
+		## Special behaviours
+		## 1) change of input file / storage dir when current sequence not ended => end it
+		if attr in ["inputFile", "storageDir"] and self.record:
+			self.printer.info("The current sequence will be ended now.")
+			self.plotSequence()
+		## 2) reuse option => convert string to list
+		elif attr == "reuse":
+			newVal = newVal.split(',')
+		## 3) planning option => convert file to list of parameter strings
+		elif attr == "iterPlanning":
+			newVal = self.plannedIterations(newVal)
+		
+		## modify corresponding option
+		setattr(self, attr, newVal)
+		## update options menu
+		self.updateOptionValue(selector, newVal)
+		
+		return True # to stay in this level's menu
 	
+	
+	## Updates the value of one of the options (indicated by its selector) in the description of this option
+	## in the options menu.
+	## The new value will be the second argument.
+	def updateOptionValue(self, optionSelector, newVal):
+		optionIndex = optionSelector - 1
+		oldVal = self.optionsMenu.choices[optionIndex].description
+		oldVal = oldVal[oldVal.index("\n\t\t") + len("\n\t\t"):]
+		
+		setattr(self.optionsMenu.choices[optionIndex], "description", 
+			self.optionsMenu.choices[optionIndex].description.replace(str(oldVal), str(newVal)))
+
 	
 	## Displays Byblo help to give information about the possible parameter strings, how to build them
 	## and what they mean
@@ -251,6 +284,26 @@ class BybloCmp:
 		os.chdir(startDir)
 		self.printer.info("Moved back to " + os.getcwd())
 		
+		return True # to stay in this level's menu
+	
+	
+	## Displays the content of the output file containing comparison results, starting at the beginning
+	## of the current sequence. Nothing is the file is empty.
+	## @return True
+	def displayComparisonResults(self, args):
+		## find beginning of last sequence
+		nbLines, seqStart = 0, 0
+		try:
+			for line in open(self.outputFile, 'r'):
+				if line.startswith("---------"): seqStart=nbLines
+				nbLines += 1
+				
+			## print current sequence
+			self.printer.file(self.outputFile, min=seqStart, title="\nComparison results")
+			
+		except IOError as e:
+			self.printer.info("Nothing to display yet.")
+			
 		return True # to stay in this level's menu
 	
 	
@@ -271,9 +324,6 @@ class BybloCmp:
 		## determine parameters to use
 		self.printer.stage(2, 6, "Determining parameters")
 		parameters = self.determineParameters()
-		if not parameters: 
-			self.mainMenu.waitForInput()
-			return # back to interactive mode with main menu
 		
 		## run Byblo
 		self.printer.stage(3, 6, "Running Byblo")
@@ -294,9 +344,17 @@ class BybloCmp:
 		
 		## planned mode
 		if self.iterPlanning:
-			if not self.iterPlanning[0]: # no more iteration planned for this sequence
-				self.plotSequence() # end the sequence
-			else: self.execution(None) # otherwise next iteration
+			## end sequence (no iteration left)
+			if not self.iterPlanning[0]: 
+				self.plotSequence()
+				## finished using file => exit planned loop
+				if not self.iterPlanning:
+					self.updateOptionValue(6, "None") # update menu
+					return True # to stay in this level's menu
+			
+			## continue sequence / start new one
+			if self.iterPlanning[0]: self.execution(None)
+			
 		## interactive mode
 		else: self.iterationEndMenu.waitForInput()
 		
@@ -316,10 +374,8 @@ class BybloCmp:
 					parameters = self.iterPlanning[0][0]
 					self.iterPlanning[0].remove(parameters)
 					break
-				else:
+				else: # empty sequence
 					self.iterPlanning.remove(self.iterPlanning[0])
-					## planning file entirely used
-					if not self.iterPlanning: return
 						
 			## interactive mode
 			else:
@@ -556,8 +612,6 @@ class BybloCmp:
 		self.printer.lines(self.record[-1], title="Record for the current interation")
 	
 	
-	
-	
 	## Plots some statistics over a single iteration of Byblo using the cmpstats module.
 	##
 	## The graphs generated are histograms representing the distributions of entries, features,
@@ -707,10 +761,6 @@ class BybloCmp:
 		## planned mode
 		if self.iterPlanning: # parameters read from file
 			self.iterPlanning.remove(self.iterPlanning[0]) # remove ended sequence
-			## sequences left => skip main menu 
-			if self.iterPlanning: self.execution(None)
-			## no sequences left => back to main menu
-			else: self.mainMenu.waitForInput()
 		
 		return False # to go back to main menu
 	
@@ -838,11 +888,12 @@ if __name__=='__main__':
 	argParser.add_argument('-o', '--output', metavar='file', dest='outputFile',
 		action='store', default="./results.cmp",
 		help='output file for comparison results (default: "./results.cmp")')
-	## planning file for the preparation of iteration parameters
+	## planning of iteration parameters
 	argParser.add_argument('-p', '--planning', metavar='file', dest='iterPlanning',
 		action='store',
-		help='planning file for the preparation of iteration parameters, each line being one of the ' +
-			'parameter strings to use and empty lines separating sequences (default: None)')
+		help='Planning file for the preparation of iteration parameters, each line being one of the ' +
+			'parameter strings to use and empty lines separating sequences (can only be used once, ' +
+			'when program starts) (default: None)')
 	## reuse option
 	argParser.add_argument('-r', '--reuse', metavar='list', dest='reuse',
 		action='store', default="baseThesaurus,bybloOutput,histograms",

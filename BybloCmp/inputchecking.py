@@ -6,9 +6,12 @@ Blah.
 """
 
 import argparse
+from os.path import abspath, dirname, exists, isdir, isfile
 
 class Parser:
 	
+	##
+	##
 	def checkBybloSettings(self, input, type="studied and fixed"):
 		description = "Choose " + type + " settings for Byblo."
 		
@@ -106,3 +109,29 @@ class Parser:
 		except:
 			return False
 	
+	##
+	##
+	def isFile(self, path, required=False):
+		return  isfile(path) if required else \
+			(isdir(dirname(path)) and not isdir(path))
+	
+	
+	##
+	##
+	def isDir(self, path, required=False):
+		return  isdir(path) if required else \
+			(isdir(dirname(path)) and not isfile(path))
+	
+	
+	## Verifies that the string is a comma-separated list of selected elements from 
+	## ["baseThesaurus", "bybloOutput", "histograms"], each one of them appearing 
+	## once at most.
+	## @return boolean
+	def isValidReuse(self, string):
+		test = string.split(',')
+		reuseList = ["baseThesaurus", "bybloOutput", "histograms"]
+		for item in test:
+			if item in reuseList:
+				reuseList.remove(item)
+			else: return False
+		return True

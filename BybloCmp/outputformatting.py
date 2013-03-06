@@ -7,7 +7,8 @@ class Printer:
 	
 	def __init__(self, verbose):
 		self.verbose = verbose
-		 
+	
+	
 	def mainTitle(self, string):
 		if self.verbose:
 			for i in range(80/2): print '*',
@@ -54,14 +55,8 @@ class Printer:
 			print "..." if stopList != len(list) else ""
 	
 	
-	def record_iter(self, out="standard"):
-		if out is "standard":
-			print "to standard output"
-		else:
-			print "to file"
-		
-
-""""
-Let's make a class out of this
-"""
-
+	## Prints a file with a customizable start and title
+	def file(self, fileName, min=0, title="File content"):
+		print title
+		fileLines = [ line[:line.index('\n')] for line in open(fileName, 'r') ]
+		self.lines(fileLines, min=min, title="From " + fileName)
