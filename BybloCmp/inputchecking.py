@@ -127,7 +127,7 @@ class Parser:
 	## ["baseThesaurus", "bybloOutput", "histograms"], each one of them appearing 
 	## once at most.
 	## @return boolean
-	def isValidReuse(self, string):
+	def isValidReuse(self, string, required=None):
 		test = string.split(',')
 		reuseList = ["baseThesaurus", "bybloOutput", "histograms"]
 		for item in test:

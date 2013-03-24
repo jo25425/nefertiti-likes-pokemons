@@ -69,8 +69,8 @@ class BybloCmp:
 	"""
 	
 	## Initialises the parameters of the module
-	def __init__(self, inputFile, baseThesaurus, bybloDir, storageDir, outputFile, 
-		planningFile, reuse, cut, verbose):
+	def __init__(self, inputFile, baseThesaurus, bybloDir, storageDir, 
+		outputFile, planningFile, sgeScript, reuse, cut, verbose):
 		
 		## parser for input
 		self.parser = inputchecking.Parser()
@@ -92,6 +92,8 @@ class BybloCmp:
 			else join(abspath(outputFile), "results.cmp")
 		## planning of iteration parameters
 		self.iterPlanning = self.plannedIterations(planningFile)
+		## script for Sun Grid Engine submission
+		self.sgeScript = abspath(sgeScript) if sgeScript else None
 		## reuse option
 		self.reuse = reuse
 		## cut option
@@ -107,7 +109,7 @@ class BybloCmp:
 		self.mainMenu = self.initMainMenu()
 		## record of iterations
 		self.record = []
-	
+		
 	
 	## Reads the planning file to determine which parameter strings will be used in the next iterations,
 	## and how they form one or more sequences.
@@ -138,7 +140,7 @@ class BybloCmp:
 		self.mainMenu.waitForInput()
 		
 		etime = time.time()
-		self.printer.info("Execution took "+str(etime-stime)+"seconds")
+		self.printer.info("Execution took "+str(etime-stime)+" seconds")
 	
 	
 	## Creates the main menu.
@@ -452,7 +454,9 @@ class BybloCmp:
 		
 		## execute Byblo in a subprocess
 		logFile = open(devnull, 'w')
-		out = subprocess.call(abspath("./byblo.sh ") + " -i " + self.inputFile + " -o " + tmpDir +\
+		toExecute = "qsub " + self.sgeScript if self.sgeScript else abspath("./byblo.sh ")
+		print "to execute:", toExecute
+		out = subprocess.call(toExecute + " -i " + self.inputFile + " -o " + tmpDir +\
 			" --stages enumerate,count", shell=True, stdout=logFile, stderr=logFile)
 		if logFile: logFile.close()
 		
@@ -505,7 +509,9 @@ class BybloCmp:
 			## execute Byblo in a subprocess
 			logFile = open(devnull, 'w') if not self.verbose else None
 			initTime = time.time()
-			out = subprocess.call(abspath("./byblo.sh ") + " -i " + self.inputFile + " -o " + thesauriDir +\
+			toExecute = ("qsub " + self.sgeScript) if self.sgeScript else abspath("./byblo.sh")
+			print "to execute:", toExecute
+			out = subprocess.call(toExecute + " -i " + self.inputFile + " -o " + thesauriDir +\
 				" "+ parameters, shell=True, stdout=logFile, stderr=logFile)
 			runTime = time.time() - initTime
 			if logFile: logFile.close()
@@ -519,7 +525,7 @@ class BybloCmp:
 				self.printer.info("Byblo failed with settings: " + parameters + "\n       Fail Code: " + str(out))
 				return -1
 			else:
-				self.printer.info("Execution took " + str(runTime) + "seconds.")
+				self.printer.info("Execution took " + str(runTime) + " seconds.")
 			
 			## rename files to include the parameter string in their name and saves running time
 			self.renameBybloOutputFiles(parameters, base)
@@ -684,7 +690,7 @@ class BybloCmp:
 				"%.2f" % self.record[-1]["runtime"] + " seconds")
 			out("%-25s" % "Similarity with WordNet: " +
 				"%.5f" % self.record[-1]["sim-with-WN"])
-			out("%-25s" % "SImilarity with previous: " + 
+			out("%-25s" % "Similarity with previous: " + 
 				(("%.5f" % self.record[-1]["sim-with-prev"]) 
 				if type(self.record[-1]["sim-with-prev"]) == float
 				else str(self.record[-1]["sim-with-prev"])))
@@ -879,7 +885,7 @@ if __name__=='__main__':
 	## location of the Byblo directory
 	argParser.add_argument('-b', '--byblo', metavar='dir', dest='bybloDir',
 		action='store', default="../Byblo-2.2.0",
-		help='directory for the location Byblo (default: "../Byblo-2.2.0")')
+		help='directory for the location of Byblo (default: "../Byblo-2.2.0")')
 	## storage directory for Byblo output
 	argParser.add_argument('-s', '--storage', metavar='dir', dest='storageDir',
 		action='store', default="./byblo-output",
@@ -894,6 +900,11 @@ if __name__=='__main__':
 		help='Planning file for the preparation of iteration parameters, each line being one of the ' +
 			'parameter strings to use and empty lines separating sequences (can only be used once, ' +
 			'when program starts) (default: None)')
+	## script for Sun Grid Engine submission
+	argParser.add_argument('--sge-script', metavar='file', dest='sgeScript',
+		action='store',
+		help='Sun Grid Engine submission script for full execution of Byblo (in Byblo directory) ' +
+		'(default: None)')
 	## reuse option
 	argParser.add_argument('-r', '--reuse', metavar='list', dest='reuse',
 		action='store', default="baseThesaurus,bybloOutput,histograms",
@@ -910,8 +921,5 @@ if __name__=='__main__':
 		
 	a = argParser.parse_args()
 	bybloCmp = BybloCmp(a.inputFile, a.baseThesaurus, a.bybloDir, a.storageDir, 
-		a.outputFile, a.iterPlanning, a.reuse.split(','), a.cut, a.verbose)
+		a.outputFile, a.iterPlanning, a.sgeScript, a.reuse.split(','), a.cut, a.verbose)
 	bybloCmp.run()
-	
-
-	
