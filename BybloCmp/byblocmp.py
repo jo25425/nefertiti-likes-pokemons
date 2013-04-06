@@ -507,21 +507,24 @@ class BybloCmp:
 			self.printer.info("Moved to " + os.getcwd())
 			
 			## execute Byblo in a subprocess
-			logFile = open(devnull, 'w') if not self.verbose else None
-			initTime = time.time()
-			toExecute = ("qsub " + self.sgeScript) if self.sgeScript else abspath("./byblo.sh")
-			print "to execute:", toExecute
-			out = subprocess.call(toExecute + " -i " + self.inputFile + " -o " + thesauriDir +\
-				" "+ parameters, shell=True, stdout=logFile, stderr=logFile)
-			runTime = time.time() - initTime
-			if logFile: logFile.close()
+			if self.sgeScript:
+				logFile = "qsub.log"
+				out = self.executeSubprocess("qsub " + self.sgeScript + " -i " + self.inputFile + " -o " + thesauriDir +\
+					" "+ parameters, logFile)
+				runTime = self.retrieveRunningTime("BybloBuild", logFile)
+			else:
+				logFile = open(devnull, 'w') if not self.verbose else None
+				initTime = time.time()
+				out = self.executeSubprocess(abspath("./byblo.sh") + " -i " + self.inputFile + " -o " +\
+					thesauriDir + " "+ parameters, logFile)
+				runTime = time.time() - initTime if out == 0 else -1
 			
 			## move back to initial directory
 			os.chdir(startDir)
 			self.printer.info("Moved back to " + os.getcwd())
 			
 			## stop here in case of fail
-			if out != 0:
+			if runTime == -1:
 				self.printer.info("Byblo failed with settings: " + parameters + "\n       Fail Code: " + str(out))
 				return -1
 			else:
@@ -543,7 +546,70 @@ class BybloCmp:
 		self.record.append(aboutIteration)
 		return 0
 
+	
+	###############################################################
+	###############################################################
+	def fileContentAfterWritten(self, filename):
+		content = ""
+		while not content: content = list(open(filename, 'r'))
+		return content
 
+	def extractText(self, fileName, lineIndex, start, end, mod):
+		text = self.fileContentAfterWritten(fileName)[lineIndex]
+		if text.startswith(start) and text.endswith(end):
+			return mod(text[ len(start) : text.index(end) ])
+		else:
+			return -1
+
+	def executeSubprocess(self, command, logFileName):
+		logFile = open(logFileName, 'w')
+		out = subprocess.call(command, shell=True, stdout=logFile, stderr=logFile)
+		if logFile: logFile.close()
+		return out
+		
+	def waitForJobEnd(self, jobID):
+		jobEndedText = "Following jobs do not exist or permissions are not sufficient: \n"
+		command, logFileName = "qstat -j " + str(jobID), "qstat.log"
+		stime = time.time()
+		timeUnit, checkCounter = 1, 0 # check every 10 seconds at first, then every 10 minutes
+		
+		while True:
+			if time.time() > stime + 10*timeUnit: # if 10 seconds/minutes have passed
+				# try accessing the job information with qstat
+				if self.executeSubprocess(command, logFileName) != 0:return -1
+				# is it already finished?
+				if self.fileContentAfterWritten(logFileName)[0] == jobEndedText: break
+				# reinitialise time counter
+				if checkCounter < 10: checkCounter += 1 # increment counter for the 10 first checks
+				elif checkCounter == 10: timeUnit = 60 # then switch to a gap of 10 MINUTES between checks
+				stime = time.time()
+		os.remove("qstat.log")
+		return 0
+
+	def retrieveRunningTime(self, processName, logFileName):
+		## 1) retrieve job ID
+		start, end = "Your job ", "(\"" + processName + "\") has been submitted\n"
+		toInt = lambda intString: int(intString)
+		jobID = self.extractText("qsub.log", 0, start, end, toInt)
+		
+		## 2) check for subprocess end
+		returnCode = self.waitForJobEnd(jobID)
+
+		## 3) retrieve running time from Byblo log file
+		start, end = " * Elapsed time: ", "\n"
+		toSeconds = lambda timeString: sum( [float(t)*60**(2-i) for i, t in enumerate( timeString.split(':') )] )
+		time = self.extractText(processName + ".o" + str(jobID), -4, start, end, toSeconds)
+
+		## 4) delete unwanted files resulting from SGE submission
+		os.remove(processName + ".po" + str(jobID))
+		os.remove("qsub.log")
+
+		return time # -1 if there was an error at any point
+	
+	###############################################################
+	###############################################################
+	
+	
 	## Predicate used to determine whether ALL of the output files for Byblo with a given parameter 
 	## string already exist or not. If so, they can be reused. If not, a single missing file is enough to 
 	## require Byblo to be run again.
