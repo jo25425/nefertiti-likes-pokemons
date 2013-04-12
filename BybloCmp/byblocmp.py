@@ -486,7 +486,7 @@ class BybloCmp:
 		base = join(self.storageDir, "thesauri", basename(self.inputFile))
 		runTime = -1
 		
-		## reuse existing files and retreve the running time to recreate the appropriate record
+		## reuse existing files and retrieve the running time to recreate the appropriate record
 		if "bybloOutput" in self.reuse and self.existBybloOutput(parameters, base):
 			file = open(base + cmpstats.paramSubstring(parameters) + ".runtime", 'r')
 			runTime = float(file.readline())
@@ -513,7 +513,7 @@ class BybloCmp:
 					" "+ parameters, logFile)
 				runTime = self.retrieveRunningTime("BybloBuild", logFile)
 			else:
-				logFile = open(devnull, 'w') if not self.verbose else None
+				logFile = devnull if not self.verbose else None
 				initTime = time.time()
 				out = self.executeSubprocess(abspath("./byblo.sh") + " -i " + self.inputFile + " -o " +\
 					thesauriDir + " "+ parameters, logFile)
@@ -525,7 +525,8 @@ class BybloCmp:
 			
 			## stop here in case of fail
 			if runTime == -1:
-				self.printer.info("Byblo failed with settings: " + parameters + "\n       Fail Code: " + str(out))
+				self.printer.info("Byblo failed with settings: " + parameters + 
+				"\n       Fail Code: " + str(out))
 				return -1
 			else:
 				self.printer.info("Execution took " + str(runTime) + " seconds.")
@@ -562,30 +563,35 @@ class BybloCmp:
 			return -1
 
 	def executeSubprocess(self, command, logFileName):
-		logFile = open(logFileName, 'w')
+		logFile = open(logFileName, 'w') if logFileName else None
 		out = subprocess.call(command, shell=True, stdout=logFile, stderr=logFile)
 		if logFile: logFile.close()
 		return out
-		
+	
+	## Pauses the execution until the job whose ID is passed as an argument finishes executing.
+	## @return -1 for failure, 0 for success
 	def waitForJobEnd(self, jobID):
 		jobEndedText = "Following jobs do not exist or permissions are not sufficient: \n"
 		command, logFileName = "qstat -j " + str(jobID), "qstat.log"
 		stime = time.time()
-		timeUnit, checkCounter = 1, 0 # check every 10 seconds at first, then every 10 minutes
+		timeInterval, checkCounter = 10, 0 ## interval set to 10 seconds at first
 		
 		while True:
-			if time.time() > stime + 10*timeUnit: # if 10 seconds/minutes have passed
-				# try accessing the job information with qstat
+			if time.time() > stime + timeInterval: ## if 10 seconds/minutes have passed
+				## try accessing the job information with qstat
 				if self.executeSubprocess(command, logFileName) != 0:return -1
-				# is it already finished?
+				## is it already finished?
 				if self.fileContentAfterWritten(logFileName)[0] == jobEndedText: break
-				# reinitialise time counter
-				if checkCounter < 10: checkCounter += 1 # increment counter for the 10 first checks
-				elif checkCounter == 10: timeUnit = 60 # then switch to a gap of 10 MINUTES between checks
+				## after 10 checks, switch to an interval of 10 MINUTES between checks
+				if checkCounter == 10: timeInterval *= 60
+				checkCounter += 1
+				## reinitialise time counter
 				stime = time.time()
 		os.remove("qstat.log")
 		return 0
 
+	## 
+	##
 	def retrieveRunningTime(self, processName, logFileName):
 		## 1) retrieve job ID
 		start, end = "Your job ", "(\"" + processName + "\") has been submitted\n"
