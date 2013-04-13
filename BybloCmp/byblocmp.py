@@ -368,8 +368,8 @@ class BybloCmp:
 
 	## Prepares the thesaurus that will be used as a base for later evaluation against WordNet. This 
 	## thesaurus is built using the entries appearing in the input file, and similarity scores computed
-	##	from WordNet.
-	## return code indicating success/failure of the run
+	## from WordNet.
+	## @return 0 for success or -1 for failure (on Byblo)
 	def prepareBaseThesaurus(self):
 		## try opening the file
 		try:
@@ -415,30 +415,6 @@ class BybloCmp:
 		return 0
 	
 	
-	## Determines the parameters to use for the current iteration, either by using those read from the
-	## planning file, or by prompting the user.
-	## If the parameter strings for planned iteration are all consumed, the function simply returns, in order
-	## to abort the iteration and give the control to a new main menu.
-	## @return parameters or None
-	def determineParameters(self):
-		while True:
-			## planned mode
-			if self.iterPlanning:
-				if self.iterPlanning[0]:
-					parameters = self.iterPlanning[0][0]
-					self.iterPlanning[0].remove(parameters)
-					break
-				else: # empty sequence
-					self.iterPlanning.remove(self.iterPlanning[0])
-						
-			## interactive mode
-			else:
-				parameters = raw_input("Parameters for this iteration of Byblo? ")
-				if self.parser.checkBybloSettings(parameters, type='studied'): break
-				else: print ""
-		return parameters
-	
-	
 	## Runs Byblo's first two stages (enumerate and count) in a subprocess, in order to list all of the
 	## different entries appearing in the input file. Also renames the files so that they reflect the absence
 	## of settings.
@@ -480,6 +456,30 @@ class BybloCmp:
 				newname = base + cmpstats.paramSubstring("") + ext
 				os.rename(filename, newname)
 		return 0
+		
+	
+	## Determines the parameters to use for the current iteration, either by using those read from the
+	## planning file, or by prompting the user.
+	## If the parameter strings for planned iteration are all consumed, the function simply returns, in order
+	## to abort the iteration and give the control to a new main menu.
+	## @return parameters or None
+	def determineParameters(self):
+		while True:
+			## planned mode
+			if self.iterPlanning:
+				if self.iterPlanning[0]:
+					parameters = self.iterPlanning[0][0]
+					self.iterPlanning[0].remove(parameters)
+					break
+				else: # empty sequence
+					self.iterPlanning.remove(self.iterPlanning[0])
+						
+			## interactive mode
+			else:
+				parameters = raw_input("Parameters for this iteration of Byblo? ")
+				if self.parser.checkBybloSettings(parameters, type='studied'): break
+				else: print ""
+		return parameters
 	
 	
 	## Runs Byblo in a subprocess, renames files produced so that they reflect the settings used,
@@ -540,24 +540,40 @@ class BybloCmp:
 		
 		## update record
 		aboutIteration = {
-			"input" 		: self.inputFile,
+			"input" 	: self.inputFile,
 			"settings" 	: parameters if parameters else 'None',
-			"output" 		: self.storageDir,
+			"output" 	: self.storageDir,
 			"runtime"	: runTime,
 			"sim-with-WN"	: 'None',
-			"sim-with-prev": 'None'
+			"sim-with-prev" : 'None'
 			}
 		self.record.append(aboutIteration)
 		return 0
 
 	
-	###############################################################
-	###############################################################
+	## Predicate used to determine whether ALL of the output files for Byblo with a given parameter 
+	## string already exist or not. If so, they can be reused. If not, a single missing file is enough to 
+	## require Byblo to be run again.
+	## @return boolean
+	def existBybloOutput(self, parameters, base):
+		for ext in BYBLO_OUTPUT_EXTENSIONS + [".runtime"]:
+			if not exists(base + cmpstats.paramSubstring(parameters) + ext): 
+				return False
+		return True
+	
+	
+	## Returns the content of a file in a list, but only after this file has been written to.
+	## @retun list of a file content
 	def fileContentAfterWritten(self, filename):
 		content = ""
 		while not content: content = list(open(filename, 'r'))
 		return content
-
+	
+	
+	## Searchs in the given file, at the given line index, for some text starting after the given 
+	## start string and finishing before the given end string. Then applies the given modification
+	## function to the text found.
+	## @return wanted info or -1 if not found
 	def extractText(self, fileName, lineIndex, start, end, mod):
 		text = self.fileContentAfterWritten(fileName)[lineIndex]
 		if text.startswith(start) and text.endswith(end):
@@ -565,11 +581,15 @@ class BybloCmp:
 		else:
 			return -1
 
+
+	## Executes a subprocess for a given command, printing the execution log to the given log file.
+	## @return subprocess return code
 	def executeSubprocess(self, command, logFileName):
 		logFile = open(logFileName, 'w') if logFileName else None
 		out = subprocess.call(command, shell=True, stdout=logFile, stderr=logFile)
 		if logFile: logFile.close()
 		return out
+	
 	
 	## Pauses the execution until the job whose ID is passed as an argument finishes executing.
 	## @return -1 for failure, 0 for success
@@ -593,8 +613,11 @@ class BybloCmp:
 		os.remove("qstat.log")
 		return 0
 
-	## 
-	##
+
+	## After the submission through SGE of the job whose name and submission log are passed, takes care
+	## of retrieving the running time of this job. Uses the log to find the job ID, wait for the job end,
+	## then only read the running time from this job's execution log.
+	## @return runtime or -1 if failure
 	def retrieveRunningTime(self, processName, logFileName):
 		## 1) retrieve job ID
 		start, end = "Your job ", "(\"" + processName + "\") has been submitted\n"
@@ -615,19 +638,6 @@ class BybloCmp:
 
 		return time # -1 if there was an error at any point
 	
-	###############################################################
-	###############################################################
-	
-	
-	## Predicate used to determine whether ALL of the output files for Byblo with a given parameter 
-	## string already exist or not. If so, they can be reused. If not, a single missing file is enough to 
-	## require Byblo to be run again.
-	## @return boolean
-	def existBybloOutput(self, parameters, base):
-		for ext in BYBLO_OUTPUT_EXTENSIONS + [".runtime"]:
-			if not exists(base + cmpstats.paramSubstring(parameters) + ext): 
-				return False
-		return True
 	
 	## Renames ALL of the output files of Byblo so that their name includes the parameter string used
 	## by Byblo to create them.
