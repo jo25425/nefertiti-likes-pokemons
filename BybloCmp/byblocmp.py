@@ -651,9 +651,10 @@ class BybloCmp:
 		evalOutput = "eval-iter"+str(len(self.record))+".tmp"
 		
 		## compute similarity with WordNet
-		with open(findThesaurus(self.record[-1]), 'r') as currentTh:
+		with open(findThesaurus(self.record[-1]), 'r') as currentTh,\
+			open(self.baseThesaurus, 'r') as baseTh:
 			evalTask1 = bybloeval.BybloEval(
-				[currentTh, self.baseThesaurus], 
+				[currentTh, baseTh], 
 				self.baseThesaurus,
 				outputFile=evalOutput, 
 				method="rank", 
