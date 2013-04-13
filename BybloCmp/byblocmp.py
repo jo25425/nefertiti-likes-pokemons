@@ -131,18 +131,6 @@ class BybloCmp:
 		return sequences
 	
 	
-	## Run
-	def run(self):
-		## start operations.
-		stime = time.time()
-		self.printer.mainTitle("Byblo Configuration Helper")
-		
-		self.mainMenu.waitForInput()
-		
-		etime = time.time()
-		self.printer.info("Execution took "+str(etime-stime)+" seconds")
-	
-	
 	## Creates the main menu.
 	## It allows to navigate in the program, accessing all available functionalities."
 	## @return menu
@@ -193,13 +181,16 @@ class BybloCmp:
 			Choice(6, description="Planning of iteration parameters (enter planning file)" 
 				+ formatVal(self.iterPlanning),
 				value=[self.parser.isFile, 6, "iterPlanning", True], handler=self.changeOption),
-			Choice(7, description="Cut option" + formatVal(self.cut),
-				value=[None, 7, "cut", False], handler=self.changeOption),
-			Choice(8, description="Reuse option" + formatVal(self.reuse),
-				value=[self.parser.isValidReuse, 8, "reuse", False], handler=self.changeOption),
-			Choice(9, description="Verbose option" + formatVal(self.verbose),
-				value=[None, 9, "verbose", False], handler=self.changeOption),			
-			Choice(10, description="Back to main menu", handler=lambda anything:False)
+			Choice(7, description="Script for Sun Grid Engine submission" + formatVal(self.sgeScript),
+				value=[self.parser.isFile, 7, "sgeScript", True], handler=self.changeOption),
+			Choice(8, description="Cut option" + formatVal(self.cut),
+				value=[None, 8, "cut", False], handler=self.changeOption),
+			Choice(9, description="Reuse option" + formatVal(self.reuse),
+				value=[self.parser.isValidReuse, 9, "reuse", False], handler=self.changeOption),
+			Choice(10, description="Verbose option" + formatVal(self.verbose),
+				value=[None, 10, "verbose", False], handler=self.changeOption),
+				
+			Choice(11, description="Back to main menu", handler=lambda anything:False)
 		]
 		return Menu("Options Menu", optionsChoices, "What do you want to change?")
 	
@@ -272,21 +263,16 @@ class BybloCmp:
 			self.optionsMenu.choices[optionIndex].description.replace(str(oldVal), str(newVal)))
 
 	
-	## Displays Byblo help to give information about the possible parameter strings, how to build them
-	## and what they mean
-	def displayBybloHelp(self, args):
-		## move to Byblo directory, and run it in a subprocess
-		startDir=abspath(os.getcwd())
-		os.chdir(self.bybloDir)
-		self.printer.info("Moved to " + os.getcwd())
-		out = subprocess.call(abspath("./byblo.sh ") + " --help", shell = True)
-		## fail?
-		if(out != 0 and out != 255):
-			self.printer.info("Byblo help failed.\n       Fail Code: " + str(out))
-		os.chdir(startDir)
-		self.printer.info("Moved back to " + os.getcwd())
+	## Run
+	def run(self):
+		## start operations.
+		stime = time.time()
+		self.printer.mainTitle("Byblo Configuration Helper")
 		
-		return True # to stay in this level's menu
+		self.mainMenu.waitForInput()
+		
+		etime = time.time()
+		self.printer.info("Execution took "+str(etime-stime)+" seconds")
 	
 	
 	## Displays the content of the output file containing comparison results, starting at the beginning
@@ -309,13 +295,30 @@ class BybloCmp:
 		return True # to stay in this level's menu
 	
 	
+	## Displays Byblo help to give information about the possible parameter strings, how to build them
+	## and what they mean
+	def displayBybloHelp(self, args):
+		## move to Byblo directory, and run it in a subprocess
+		startDir=abspath(os.getcwd())
+		os.chdir(self.bybloDir)
+		self.printer.info("Moved to " + os.getcwd())
+		out = subprocess.call(abspath("./byblo.sh ") + " --help", shell = True)
+		## fail?
+		if(out != 0 and out != 255):
+			self.printer.info("Byblo help failed.\n       Fail Code: " + str(out))
+		os.chdir(startDir)
+		self.printer.info("Moved back to " + os.getcwd())
+		
+		return True # to stay in this level's menu
+	
+	
 	## Executes Byblo once, going through the following steps:
 	## 1. determine the parameters to use (checked by parser)
 	## 2. run Byblo with these parameters
 	## 3. evaluate the resultant thesaurus against the one from the previous iteration
 	## 4. generate histograms showing the distributions observed (of entries, features, events, and
 	##     similarity scores)
-	## FInally, the user is offered the possibility to end the current sequence.
+	## Finally, the user is offered the possibility to end the current sequence.
 	## @return  True
 	def execution(self, args):
 		## prepare base thesaurus
@@ -362,31 +365,7 @@ class BybloCmp:
 		
 		return True # to stay in this level's menu
 	
-	
-	## Determines the parameters to use for the current iteration, either by using those read from the
-	## planning file, or by prompting the user.
-	## If the parameter strings for planned iteration are all consumed, the function simply returns, in order
-	## to abort the iteration and give the control to a new main menu.
-	## @return parameters or None
-	def determineParameters(self):
-		while True:
-			## planned mode
-			if self.iterPlanning:
-				if self.iterPlanning[0]:
-					parameters = self.iterPlanning[0][0]
-					self.iterPlanning[0].remove(parameters)
-					break
-				else: # empty sequence
-					self.iterPlanning.remove(self.iterPlanning[0])
-						
-			## interactive mode
-			else:
-				parameters = raw_input("Parameters for this iteration of Byblo? ")
-				if self.parser.checkBybloSettings(parameters, type='studied'): break
-				else: print ""
-		return parameters
-	
-	
+
 	## Prepares the thesaurus that will be used as a base for later evaluation against WordNet. This 
 	## thesaurus is built using the entries appearing in the input file, and similarity scores computed
 	##	from WordNet.
@@ -434,6 +413,30 @@ class BybloCmp:
 			
 			self.printer.info("Base WordNet thesaurus created.")
 		return 0
+	
+	
+	## Determines the parameters to use for the current iteration, either by using those read from the
+	## planning file, or by prompting the user.
+	## If the parameter strings for planned iteration are all consumed, the function simply returns, in order
+	## to abort the iteration and give the control to a new main menu.
+	## @return parameters or None
+	def determineParameters(self):
+		while True:
+			## planned mode
+			if self.iterPlanning:
+				if self.iterPlanning[0]:
+					parameters = self.iterPlanning[0][0]
+					self.iterPlanning[0].remove(parameters)
+					break
+				else: # empty sequence
+					self.iterPlanning.remove(self.iterPlanning[0])
+						
+			## interactive mode
+			else:
+				parameters = raw_input("Parameters for this iteration of Byblo? ")
+				if self.parser.checkBybloSettings(parameters, type='studied'): break
+				else: print ""
+		return parameters
 	
 	
 	## Runs Byblo's first two stages (enumerate and count) in a subprocess, in order to list all of the
@@ -650,9 +653,9 @@ class BybloCmp:
 		## compute similarity with WordNet
 		with open(findThesaurus(self.record[-1]), 'r') as currentTh:
 			evalTask1 = bybloeval.BybloEval(
-				[currentTh], 
-				self.baseThesaurus, 
-				evalOutput, 
+				[currentTh, self.baseThesaurus], 
+				self.baseThesaurus,
+				outputFile=evalOutput, 
 				method="rank", 
 				testIndex=0, 
 				maxRank=None, 
