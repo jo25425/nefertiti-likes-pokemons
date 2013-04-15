@@ -867,16 +867,8 @@ class BybloCmp:
 		countLines = lambda file: sum([1 for entry in open(file)])
 		statsDict = {}
 		
-		## compute statistics regarding input (one per sequence)
-		nbEntries, nbEvents = 0, 0
-		for entry in open(self.inputFile, 'r'):
-			nbEntries += 1
-			nbEvents += len(entry.split()) -1
-		
 		## add them to the dictionary
-		statsDict["Total_Number_Of_Distinct_Entries"] = [nbEntries]
-		statsDict["Total_Number_Of_Distinct_Events"] = [nbEvents]
-		statsDict["Average_Number_Of_Events_By_Entry"] = [1.0 * nbEntries / nbEvents]
+		statsDict["Total_Number_Of_Input_Entries"] = [countLines(self.inputFile)]
 		
 		## compute statistics regarding output (once per iteration)
 		nbFilteredEntries, nbFilteredFeatures, nbFilteredEvents, nbFilteredNeighbourSets = [], [], [], []
@@ -894,10 +886,10 @@ class BybloCmp:
 			simWithPrev.append( iteration["sim-with-prev"] )
 		
 		## add them to the dictionary
-		statsDict["Number_Of_Lines_In_File_.entries.filtered"] = nbFilteredEntries
-		statsDict["Number_Of_Lines_In_File_.features.filtered"] = nbFilteredFeatures
-		statsDict["Number_Of_Lines_In_File_.events.filtered"] = nbFilteredEvents
-		statsDict["Number_Of_Lines_In_File_.sims.neighbours"] = nbFilteredNeighbourSets
+		statsDict["Number_Of_Entries_After_Filtering"] = nbFilteredEntries
+		statsDict["Number_Of_Features_After_Filtering"] = nbFilteredFeatures
+		statsDict["Number_Of_Events_After_Filtering"] = nbFilteredEvents
+		statsDict["Number_Of_Thesaurus_Entries_After_Filtering"] = nbFilteredNeighbourSets
 		statsDict["Byblo_Run_Time"] = runTime
 		statsDict["Similarity_With_WordNet"] = simWithWN
 		statsDict["Similarity_With_Previous"] = simWithPrev
@@ -915,11 +907,16 @@ class BybloCmp:
 		findSettings = lambda dict: dict["settings"] if dict["settings"] != 'None' else ''
 		
 		## initialise lists and dictionary
-		allStrings = map(findSettings, self.record)
 		stringsForPlots, stringsForCharts = [], []
 		paramNames = ["fef", "fff", "fvf", "Smn"]
 		paramDict = {}
 		for p in paramNames: paramDict[p] = []
+		
+		## retrieve sequence strings and add value 0 for absent parameters in each string
+		allStrings = map(findSettings, self.record)
+		for i in range(len(allStrings)):
+			for p in [p for p in paramNames if p not in allStrings[i]]:
+					allStrings[i]  += (' ' if allStrings[i]  else '') + '-' + p + " 0"
 		
 		## create lists of distinct values used for each parameter
 		for settings in allStrings:
@@ -927,7 +924,7 @@ class BybloCmp:
 			## look for each parameter in the string...
 			for param in [p for p in paramNames if p in settings]:
 				## ... and add its value to the right list (if it isn't already there)
-				value = things[ things.index('-'+param) + 1 ]
+				value = int(things[ things.index('-'+param) + 1 ])
 				if value not in paramDict[param]: paramDict[param].append(value)
 		
 		## create lists of values in this dictionary# and sort strings

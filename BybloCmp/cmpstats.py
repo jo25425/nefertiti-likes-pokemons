@@ -83,7 +83,9 @@ def fullParamName(initials):
 def generateStringsFiles(sampleFileNames, paramList, thesauriDir, bybloDir, 
 	reuse=[], verbose=False, filesToCreate=[]):
 	savedFiles = []
-		
+	
+	def vprint(s): print ("[INFO] " + s + '\n' if verbose else ""),
+	
 	for fileName in sampleFileNames:
 		for paramStr in [paramSubstring(s) for s in paramList]:
 			for typeSuffix in [".entries", ".features", ".events", ".sims"]:
@@ -92,45 +94,41 @@ def generateStringsFiles(sampleFileNames, paramList, thesauriDir, bybloDir,
 				## move to Byblo directory
 				startDir=abspath(os.getcwd())
 				os.chdir(bybloDir)
-				if verbose:
-					print "\n   Moved to " + os.getcwd()
+				vprint("Moved to " + os.getcwd())
 				
 				## convert both filtered (when it exists and hasn't already been converted) and 
 				## unfiltered versions
 				hasFiltered = isfile(inputFileName+paramStr+typeSuffix)
 				for filterSuffix in ([''] if typeSuffix == ".sims" else 
 					(['', '.filtered']) if hasFiltered else ['.filtered'] ):
-					sourceFileName = inputFileName + paramStr + typeSuffix + filterSuffix
+					srcFile = inputFileName + paramStr + typeSuffix + filterSuffix
 					
 					## only convert wanted files
-					if not filesToCreate or sourceFileName in filesToCreate:
+					if not filesToCreate or srcFile in filesToCreate:
 						## ...but only if needed
-						if "byblo_stats" in reuse and isfile(sourceFileName+".strings"):
-							if verbose:
-								print "   Reusing strings output file " + getParamSubstring(sourceFileName)
+						if "byblo_stats" in reuse and isfile(srcFile+".strings"):
+							vprint("Reusing converted file " + getParamSubstring(srcFile))
 						else:
-							if verbose:
-								print "   Creating strings output file " + getParamSubstring(sourceFileName)
+							vprint("Restoring strings for file " + getParamSubstring(srcFile))
 						
 							logFile = open(os.devnull, 'w') if not verbose else None
-							
 							out = subprocess.call(abspath("./tools.sh") + " unindex-" + typeSuffix[1:] \
-								+ " -i " + sourceFileName
-								+ " -o " + sourceFileName + ".strings" 
+								+ " -i " + srcFile
+								+ " -o " + srcFile + ".strings" 
 								+ (" -Xe "+inputFileName+paramStr+".entry-index" 
 									if typeSuffix != ".features" else "")
 								+ (" -Xf "+inputFileName+paramStr+".feature-index" 
 									if typeSuffix != ".entries" else "")
 								+ " -et JDBM",
 								shell = True, stdout = logFile, stderr = logFile)
-							
 							if  logFile: logFile.close()
-						savedFiles.append(sourceFileName + ".strings")
+								
+						savedFiles.append(srcFile + ".strings")
 				## move back to execution directory
 				os.chdir(startDir)
-				if verbose:
-					print "   Moved back to " + os.getcwd()
+				vprint("Moved back to " + os.getcwd() + '\n')
 	return savedFiles
+
 
 ## Makes a graph nicer and clearer by adding a title, axes labels, a legend, limits on the axes (for an 
 ## exact fit or a "zoom"), a scientific notation (for large numbers)
@@ -222,7 +220,7 @@ def fittingMethod(xdata, ydata, method, initialParameters=None, verbose=False):
 	
 	## leastsq on log with affine + powerlaw
 	elif method == 4:
-		label = "leastsq on log with affine + powerlaw"
+		label = "leastsq on log (for parameters) and powerlaw (for drawing)"
 		logx, logy = log10(xdata), log10(ydata)
 		pinit = [1.0, -1.0] if initialParameters == None else initialParameters
 		out = optimize.leastsq(diffErr, pinit, args=(logx, logy, affine), full_output=1)
@@ -232,7 +230,7 @@ def fittingMethod(xdata, ydata, method, initialParameters=None, verbose=False):
 	## leastsq on log with affine + zipf
 	elif method == 5:
 		y = toProbabilities(ydata) ## convert to probabilities
-		label = "leastsq on log with affine + zipf"
+		label = "leastsq on log and zipfian model"
 		pinit = [1.0, -1.0] if initialParameters == None else initialParameters
 		out = optimize.leastsq(diffErr, pinit, args=(log10(xdata), log10(y), affine), full_output=1)
 		a =  out[0][1]
@@ -244,30 +242,9 @@ def fittingMethod(xdata, ydata, method, initialParameters=None, verbose=False):
 		label = "polyfit / polyval - 2nd degree"
 		params= polyfit(xdata, ydata, 2)
 		fit = polyval(params, xdata)
-		
-	## leastsq on quadratic
-	elif method == 7:
-		label = "leastsq on quadratic"
-		pinit = [1., 1., 1., 1.]  if initialParameters == None else initialParameters
-		out = optimize.leastsq(quadraticErr, pinit, args=(xdata, ydata), full_output=1)
-		params = out[0]
-		fit = quadratic(params, xdata)
 	
-	## curve_fit on nlogn
-	elif method == 8:
-		label = "leastsq on nlogn"
-		pinit = [1., 1., 1., 1.]  if initialParameters == None else initialParameters
-		out = optimize.leastsq(nlognErr, pinit[:], args=(xdata, ydata), full_output=1) 
-		params= out[0] 
-		covar = out[1] 
-		fit = nlogn(params, xdata)
-	
-	if verbose:
-		print "      Fitting with ["+str(method)+"] " + label
-	if method <6:
-		return fit, label, colors[method]
-	else:
-		return fit, label, params
+	if verbose: print "[INFO] Modelling data using "+label+"[method "+str(method)+"]"
+	return fit, label, colors[method]
 
 
 ## Generates histograms for Byblo result files (all sizes and parameter strings) containing counts of 
@@ -279,6 +256,8 @@ def generateHistograms(sampleFileNames, paramList, outputDir, bybloDir, reuse=[]
 	graphsDir = join(outputDir, "graphs")
 	if not exists(graphsDir): os.makedirs(graphsDir)
 	
+	def vprint(s): print ("[INFO] " + s + '\n' if verbose else ""),
+	
 	## file conversion (restore strings to ease comparison)
 	generateStringsFiles(sampleFileNames, paramList, thesauriDir, bybloDir, reuse, verbose)
 	
@@ -289,11 +268,9 @@ def generateHistograms(sampleFileNames, paramList, outputDir, bybloDir, reuse=[]
 				fileBaseName = basename(fileName) + paramStr + suffix
 				
 				if "graphs" in reuse and isfile(join(graphsDir, "Histogram-" + fileBaseName + ".pdf")):
-					if verbose:
-						print "   Reusing histogram for " + getParamSubstring(fileBaseName)
+					vprint("Reusing histogram for " + getParamSubstring(fileBaseName))
 				else:
-					if verbose:
-						print "   Creating histogram for " + getParamSubstring(fileBaseName)
+					vprint("Creating histogram for " + getParamSubstring(fileBaseName))
 					
 					## create histogram with a custom step value when required
 					if suffix == '.sims':
@@ -302,9 +279,11 @@ def generateHistograms(sampleFileNames, paramList, outputDir, bybloDir, reuse=[]
 					else:
 						savedFiles += createOccurenceHistogram("Occurence", fileBaseName, 
 							thesauriDir, graphsDir, verbose, cut)
+					if verbose: print ""
 	return savedFiles
 
-## Creates a histogram showing the distribution of frequencies for the chosen element (entry, feature, event)
+
+## Creates a histogram showing the distribution of frequencies for the chosen item (entry, feature, event)
 ## Both normal and logarithmic scale are created, together with a (for now (very) false) model attempt
 ## @return names of the saved files
 def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=False, cut=False):
@@ -319,12 +298,12 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 		reducedBins, reducedHist = extractRowsValues(join(thesauriDir, fileName + reducedFileSuffix), 	
 			LIMITS, [XBASE, YBASE], verbose=verbose)
 	
-	## figure set up
+	## 1) Figure set up
 	if not cut:
 		f, (linearScale, logScale, fitLinearScale, fitLogScale) = pl.subplots(4, 1)
 		f.set_size_inches(8.3, 11.7) ## set figure size to A4
 		f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.4) ## margins
-		f.suptitle('Occurence histogram for  ' + fileName[string.rfind(fileName, '.'):] + ' file', 
+		f.suptitle("Frequency distribution for " + fileName[string.rfind(fileName, '.')+1:], 
 			fontsize=14, fontweight='bold')
 	else:
 		individualPlots = [pl.subplots(1, 1) for x in xrange(4)]
@@ -333,12 +312,12 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 		for f in figures:
 			f.set_size_inches(8.3, 5.8) ## set figure size to A5
 			f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## margins
-			f.suptitle('Occurence histogram for  ' + fileName[string.rfind(fileName, '.'):] + ' file', 
+			f.suptitle("Frequency distribution for " + fileName[string.rfind(fileName, '.')+1:], 
 				fontsize=14, fontweight='bold')
 		
 	yLabelPos = [-0.1, 0.5]
 	
-	## REPRESENT THE DATA
+	## 2) Data representation
 	## linear bar chart of 99% of the mass
 	noThreshold = linearScale.bar(bins[:-1], hist, width=bins[1:] - bins[:-1], 
 		color="orange", label="No threshold")
@@ -354,11 +333,11 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 	pp = max([i for i,x in enumerate((np.cumsum(hist) / sum(hist)) < 0.99) if x])
 	decorateGraph(linearScale, 'Linear scale', "number of occurences", "frequency",
 		yLabelPos, "upper right" if hasFiltered else None, largeY=True)
-	decorateGraph(logScale, 'Log scale', "number of occurences", "frequency", 
+	decorateGraph(logScale, 'Logarithmic scale', "number of occurences", "frequency", 
 		yLabelPos, "upper right" if hasFiltered else None)
 	linearScale.set_xlim(xmax=XBASE ** max(pp, XBASE ** 2))
 	
-	## FIT THE DATA
+	## 3) Model fitting
 	## data
 	removeZeroValues = lambda L, L2: [L[i] for i in xrange(len(L)) if L[i]>0 and L2[i]>0]
 	x, y = removeZeroValues(bins[:-1], hist), removeZeroValues(hist, bins[:-1])
@@ -368,7 +347,7 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 	## fit functions (if enough values)
 	if len(x) > 4:
 		#!>>MODIFY HERE THE METHODS TO USE<<!#
-		methods = [1, 3, 4]
+		methods = [1, 4]
 		for m in methods:
 			mFit, mLabel, mColor= fittingMethod(x, y, m, verbose=verbose)
 			fitLinearScale.plot(x, mFit, label=mLabel, color=mColor)
@@ -380,13 +359,13 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 		fitLogScale.text(0.7, 0.1, infoString, horizontalalignment='center', verticalalignment='center',
 			transform = fitLogScale.transAxes, fontsize=10, color="firebrick")
 		
-		
-	decorateGraph(fitLinearScale, 'LInear scale - zipfian model', "number of occurences", "frequency",
-		yLabelPos, "upper right", data=(x, y), largeY=True)
-	decorateGraph(fitLogScale, 'Log scale - zipfian model', "number of occurences", "frequency",
-		yLabelPos, "upper right", data=(x, y))
+	decorateGraph(fitLinearScale, 'Linear scale - zipfian model', "number of occurences", 
+		"frequency", yLabelPos, "upper right", data=(x, y), largeY=True)
+	decorateGraph(fitLogScale, 'Logarithmic scale - zipfian model', "number of occurences", 
+		"frequency", yLabelPos, "upper right", data=(x, y))
 	fitLinearScale.set_xlim(xmax=XBASE** max(pp, XBASE ** 2))
 	
+	## 4) Save file(s)
 	savedFiles = []
 	if not cut:
 		f.savefig(join(graphsDir, 'Histogram-' + fileName + '.pdf'))
@@ -419,7 +398,7 @@ def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, verbose=F
 	f, (sims) = pl.subplots()
 	f.set_size_inches(8.3, 5.8) ## set figure size to A5
 	f.subplots_adjust(left=0.15, right=0.85) ## add margins
-	f.suptitle('Similarity histogram for  ' + fileName[string.rfind(fileName, '.'):] + ' file', 
+	f.suptitle('Similarity score distribution for ' + fileName[string.rfind(fileName, '.')+1:], 
 		fontsize=14, fontweight='bold')
 	yLabelPos = [-0.1, 0.5]
 	
@@ -485,8 +464,7 @@ def extractRowsValues(fileName, limits, bases=None, step=None, verbose=False):
 	hist = hist[:last_idx+1]
 	bins = bins[:last_idx+2]
 	
-	if verbose:
-		print "      Size hist = " +  str(len(hist)) + ", total values = " + str(int(sum(hist))) + "."
+	if verbose: print "[INFO] " + str(int(sum(hist))) + " values extracted for the histogram"
 	return bins, hist
 	
 
@@ -495,6 +473,7 @@ def extractRowsValues(fileName, limits, bases=None, step=None, verbose=False):
 def generatePlots(statsDict, paramList, paramListUser, paramListAuto, paramValuesLists,\
 	fileName, outputDir, reuse=[], verbose=False, cut=False):
 	if len(paramList) < 2: return
+	def vprint(s): print ("[INFO] " + s + '\n' if verbose else ""),
 	
 	graphsDir = join(outputDir, "graphs")
 	if not exists(graphsDir): os.makedirs(graphsDir)
@@ -507,24 +486,24 @@ def generatePlots(statsDict, paramList, paramListUser, paramListAuto, paramValue
 	
 	## all strings for chart on similarity between iterations
 	if "graphs" in reuse and isfile(join(graphsDir, 'Param-strings-vs-iter-sim-'+ fileBaseName+'.pdf')):
-		if verbose: print "   Reusing param-strings-vs-change plot"
+		vprint("Reusing param-strings-vs-change plot")
 	else:
-		if verbose: print "   Creating param-strings-vs-change plot"
+		vprint("Creating param-strings-vs-change plot")
 		savedFiles += createBarsAllParametersVsIterSim(
-			paramList, statsDict, outputDir, fileBaseName, verbose, cut)
+			paramList, statsDict, graphsDir, fileBaseName, verbose, cut)
 	
 	## parameter strings for bar charts (no linear study possible)
 	if fullStringsDict:
 		for plotType in ["files", "time", "sim"]:
 			if "graphs" in reuse and isfile(join(graphsDir, 
 				'Param-strings-vs-'+plotType+'-'+ fileBaseName+'.pdf')):
-				if verbose: print "   Reusing param-strings-vs-" + plotType + " plot"
+				vprint("Reusing param-strings-vs-" + plotType + " plot")
 			else:
-				if verbose: print "   Creating param-strings-vs-" + plotType + " plot"
+				vprint("Creating param-strings-vs-" + plotType + " plot")
 				f = {"files"	: createBarsParametersVsFiles,
 					"time"	: createBarsParametersVsTime,
 					"sim"	: createBarsParametersVsWNSim}[plotType]
-				savedFiles += f(paramListUser, fullStringsDict, outputDir, fileBaseName, verbose, cut)
+				savedFiles += f(paramListUser, fullStringsDict, graphsDir, fileBaseName, verbose, cut)
 		
 	## parameter strings for plots (linear study possible)
 	if singleParamDicts:
@@ -537,17 +516,17 @@ def generatePlots(statsDict, paramList, paramListUser, paramListAuto, paramValue
 				for plotType in ["files", "time", "sim"]:
 					if "graphs" in reuse and isfile(join(graphsDir, 
 						paramKey+'-vs-'+plotType+'['+confKey+']'+'-'+ fileBaseName+'.pdf')):
-						if verbose: print "   Reusing " + paramKey + "-vs-" + \
-							plotType + " plot with " + confKey
+						vprint("Reusing " + paramKey + "-vs-" + \
+							plotType + " plot with " + confKey)
 					else:
-						if verbose: print "   Creating " + paramKey + "-vs-" + \
-							plotType + " plot with " + confKey
+						vprint("Creating " + paramKey + "-vs-" + \
+							plotType + " plot with " + confKey)
 						
 						f = {"files"	: createPlotSingleParamVsFiles,
 							"time"	: createPlotSingleParamVsTime,
 							"sim"	: createPlotSingleParamVsWNSim}[plotType]
 						savedFiles += f(paramValues, singleParamDicts[paramKey][confKey], 
-							outputDir, fileBaseName, paramKey, confKey, verbose, cut)
+							graphsDir, fileBaseName, paramKey, confKey, verbose, cut)
 	return savedFiles
 	
 	
@@ -639,7 +618,7 @@ def decomposeDictionary(mainDict, allParamStrings, paramStringsUser, paramString
 ## Creates bar chart showing the relation between the parameters used and the result files obtained 
 ## by running Byblo (size and # of lines)
 ## No model: the parameters (x values) are not continuous data
-def createBarsParametersVsFiles(paramList, statsDictionary, outputDirectory, graphName="", 
+def createBarsParametersVsFiles(paramList, statsDictionary, graphsDir, graphName="", 
 	verbose=False, cut=False):
 ## figure set up
 	f, (lines) = pl.subplots(1, 1)
@@ -665,14 +644,14 @@ def createBarsParametersVsFiles(paramList, statsDictionary, outputDirectory, gra
 	lines.set_xticklabels(paramList, rotation=15, size='small')
 
 	## save figure
-	f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-files-' + graphName + '.pdf'))
+	f.savefig(join(graphsDir, 'Param-strings-vs-files-' + graphName + '.pdf'))
 	pl.close()
-	return [join(outputDirectory, "graphs", 'Param-strings-vs-files-' + graphName + '.pdf')]
+	return [join(graphsDir, 'Param-strings-vs-files-' + graphName + '.pdf')]
 
 
 ## Creates a bar chart showing the relation between the parameters used and the run time of Byblo
 ## No model: the parameters (x values) are not continuous data
-def createBarsParametersVsTime(paramList, statsDictionary, outputDirectory, graphName="", 
+def createBarsParametersVsTime(paramList, statsDictionary, graphsDir, graphName="", 
 	verbose=False, cut=False):
 	## figure set up
 	f, (time) = pl.subplots(1, 1)
@@ -696,15 +675,15 @@ def createBarsParametersVsTime(paramList, statsDictionary, outputDirectory, grap
 	time.set_xticklabels(paramList, rotation=15, size='small')
 
 	## save figure
-	f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-time-' + graphName + '.pdf'))
+	f.savefig(join(graphsDir, 'Param-strings-vs-time-' + graphName + '.pdf'))
 	pl.close()
-	return [join(outputDirectory, "graphs", 'Param-strings-vs-time-' + graphName + '.pdf')]
+	return [join(graphsDir, 'Param-strings-vs-time-' + graphName + '.pdf')]
 
 
 ## Creates a bar chart showing the relation between the parameters used and the similarity of 
 ## the resultant thesaurus with WordNet
 ## No model: the parameters (x values) are not continuous data
-def createBarsParametersVsWNSim(paramList, statsDictionary, outputDirectory, graphName="", 
+def createBarsParametersVsWNSim(paramList, statsDictionary, graphsDir, graphName="", 
 	verbose=False, cut=False):
 	## figure set up
 	f, (sim) = pl.subplots(1, 1)
@@ -728,15 +707,15 @@ def createBarsParametersVsWNSim(paramList, statsDictionary, outputDirectory, gra
 	sim.set_xticklabels(paramList, rotation=15, size='small')
 
 	## save figure
-	f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-WN-sim-' + graphName + '.pdf'))
+	f.savefig(join(graphsDir, 'Param-strings-vs-WN-sim-' + graphName + '.pdf'))
 	pl.close()
-	return [join(outputDirectory, "graphs", 'Param-strings-vs-WN-sim-' + graphName + '.pdf')]
+	return [join(graphsDir, 'Param-strings-vs-WN-sim-' + graphName + '.pdf')]
 
 
 ## Creates a abar chart showing the relation between the parameters used and the similarity there is
 ## between one thesaurus and the next one (next iteration)
 ## No model: the parameters don't follow any rule and appear in simple chronological order
-def createBarsAllParametersVsIterSim(paramList, statsDictionary, outputDirectory, 
+def createBarsAllParametersVsIterSim(paramList, statsDictionary, graphsDir, 
 	graphName="", verbose=False, cut=False):
 	## figure set up
 	f, (sim) = pl.subplots(1, 1)
@@ -761,105 +740,201 @@ def createBarsAllParametersVsIterSim(paramList, statsDictionary, outputDirectory
 	sim.set_xticklabels(paramList, rotation=15, size='small')
 
 	## save figure
-	f.savefig(join(outputDirectory, "graphs", 'Param-strings-vs-iter-sim-' + graphName + '.pdf'))
+	f.savefig(join(graphsDir, 'Param-strings-vs-iter-sim-' + graphName + '.pdf'))
 	pl.close()
-	return [join(outputDirectory, "graphs", 'Param-strings-vs-iter-sim-' + graphName + '.pdf')]
+	return [join(graphsDir, 'Param-strings-vs-iter-sim-' + graphName + '.pdf')]
 
 
 ## Creates plots showing the relation between the parameters used and the result files obtained 
 ## by running Byblo (# of lines)
-## MODEL?????????????????????????????
-def createPlotSingleParamVsFiles(paramList, statsDictionary, outputDirectory, graphName="",
+## No model (too many counts)
+## @return names of saved files
+def createPlotSingleParamVsFiles(paramList, statsDictionary, graphsDir, graphName="",
 	paramName="", confName="", verbose=False, cut=False):
 	
-	## figure set up
-	f, (lines) = pl.subplots(1, 1)
-	f.set_size_inches(8.3, 5.8) ## set figure size to A5
-	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## add margins
-	f.suptitle(graphName+' ['+confName+']'+'\nVariation of '+paramName+' - impact on result files', 
-		fontsize=14, fontweight='bold')
-	yLabelPos = [-0.1, 0.5] 
+	## 1) Figure set up
+	yLabelPos = [-0.1, 0.5]
+	fileInfo, confInfo = "Input file:" +  graphName, "\nFixed settings:" +  confName
+	f, (nbItems) = pl.subplots(1, 1)
+	f.set_size_inches(8.3, 11.7) ## set figure size to A4
+	f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.4) ## margins
+	## title
+	f.suptitle("Variation of the " + fullParamName(paramName) +\
+		"\nImpact on item counts", fontsize=14, fontweight='bold')
+	## info on the file and configuration used
+	f.text(0.02, 1, fileInfo, horizontalalignment='left', verticalalignment='top',
+		transform = f.transFigure, fontsize=10)
+	f.text(0.98, 1, confInfo, horizontalalignment='right', verticalalignment='top',
+		transform = f.transFigure, fontsize=10)
 	
-	## draw LINES plots for each result file
-	suffixes = ['.entries.filtered', '.events.filtered', '.sims.neighbours']
-	colors = ['RoyalBlue', 'red', 'gold', 'MediumVioletRed', 'DarkOrange', 'Chartreuse']
-	ind = np.arange(len(paramList))
-	width = 0.5 / len(paramList)
-	for suffix, color in zip(suffixes, colors):
-		linesResultFile  = statsDictionary["Number_Of_Lines_In_File_"+suffix]
-		lines.plot(paramList, linesResultFile, color=color, linestyle="dashed", marker='o', 
-			label=suffix, alpha=0.6)
-		
-	decorateGraph(lines, "Lines in the result files based on "+fullParamName(paramName), 
-		string.lower(paramName)+" value", "number of lines", yLabelPos, "upper left", 
-		largeX=True, largeY=True)
+	## 2) Data representation
+	itemTypes = ["Entries", "Features", "Events", "Thesaurus_Entries"]
+	colors = ["RoyalBlue", "red", "gold", "Chartreuse"]
+	for item, color in zip(itemTypes, colors):
+		itemCount  = statsDictionary["Number_Of_"+item+"_After_Filtering"]
+		nbItems.plot(paramList, itemCount, color=color, linestyle="dashed", marker='o', 
+			label=string.replace(string.lower(item), '_', ' '), alpha=0.6)
 
-	## save figure
-	f.savefig(join(outputDirectory, "graphs", 
-		paramName + '-vs-files'+'['+confName+']'+'-' + graphName + '.pdf'))
+	decorateGraph(nbItems, "Item counts", "filter threshold value", "number of items", 
+		yLabelPos, "upper left", largeX=True, largeY=True)
+	
+	## 4) Save file
+	fileName = paramName + "-vs-counts["+confName+"]-" + graphName + ".pdf"
+	f.savefig(join(graphsDir, fileName))
 	pl.close()
-	return [join(outputDirectory, "graphs", 
-		paramName + '-vs-files'+'['+confName+']'+'-' + graphName + '.pdf')]
+	return join(graphsDir, fileName)
 
 
 ## Creates a plot showing the relation between the variation of ONE chosen parameter and
 ## the run time of Byblo
-## MODEL?????????????????????????????
-def createPlotSingleParamVsTime(paramList, statsDictionary, outputDirectory, graphName="",
+## Model: polynomial
+## @return names of saved files
+def createPlotSingleParamVsTime(paramList, statsDictionary, graphsDir, graphName="",
 	paramName="", confName="", verbose=False, cut=False):
 	
-	## figure set up
-	f, (time) = pl.subplots(1, 1)
-	f.set_size_inches(8.3, 5.8) ## set figure size to A5
-	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## add margins
-	f.suptitle(graphName+' ['+confName+']'+'\nVariation of '+paramName+' - impact on run time',
-		fontsize=14, fontweight='bold')
-	yLabelPos = [-0.1, 0.5] 
+	## 1) Figure set up
+	yLabelPos = [-0.1, 0.5]
+	fileInfo, confInfo = "Input file:" +  graphName, "\nFixed settings:" +  confName
+	if not cut:
+		f, (time, fitTime) = pl.subplots(2, 1)
+		f.set_size_inches(8.3, 11.7) ## set figure size to A4
+		f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.4) ## margins
+		## title
+		f.suptitle("Variation of the " + fullParamName(paramName) +\
+			"\nImpact on running time", fontsize=14, fontweight='bold')
+		## info on the file and configuration used
+		f.text(0.02, 1, fileInfo, horizontalalignment='left', verticalalignment='top',
+			transform = f.transFigure, fontsize=10)
+		f.text(0.98, 1, confInfo, horizontalalignment='right', verticalalignment='top',
+			transform = f.transFigure, fontsize=10)
+	else:
+		individualPlots = [pl.subplots(1, 1) for x in xrange(2)]
+		figures = [p[0] for p in individualPlots]
+		time, fitTime = [p[1] for p in individualPlots]
+		for f in figures:
+			## size and margins
+			f.set_size_inches(8.3, 5.8)
+			f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2)
+			## title
+			f.suptitle("Variation of the " + fullParamName(paramName) +\
+				"\nImpact on running time", fontsize=14, fontweight='bold')
+			## info on the file and configuration used
+			f.text(0.02, 1, fileInfo, horizontalalignment='left', verticalalignment='top',
+				transform = f.transFigure, fontsize=10)
+			f.text(0.98, 1, confInfo, horizontalalignment='right', verticalalignment='top',
+				transform = f.transFigure, fontsize=10)	
 	
-	## REPRESENT THE DATA
+	## 2) Data representation
 	times,  timeUnit = convertTimeRange(statsDictionary["Byblo_Run_Time"])
-	time.plot(paramList, times, color='aquamarine', label="run time function of "+paramName,
-		marker='o', linestyle='dashed')
+	time.plot(paramList, times, color="firebrick", marker='o', linestyle='dashed',
+		label="run time function of "+paramName, alpha=0.6)
 		
-	decorateGraph(time, "Run time based on "+fullParamName(paramName), 
-		string.lower(paramName)+" value", "time ("+timeUnit+")", yLabelPos, largeY=True)
+	decorateGraph(time, "Running time", "filter threshold value", 
+		"time ("+timeUnit+")", yLabelPos, largeY=True)
+	
+	## 3) Model fitting
+	fitTime.fill_between(paramList, times, color="lightgrey")
+	## fit functions (if enough values)
+	if len(paramList) >= 2:
+		method = 6
+		mFit, mLabel, mColor= fittingMethod(paramList, times, method, verbose=verbose)
+		mLabel = "polynomial model proposed"
+		fitTime.plot(paramList, mFit, label=mLabel, color=mColor)
 
-	## save figure
-	f.savefig(join(outputDirectory, "graphs", 
-		paramName + '-vs-time'+'['+confName+']'+'-' + graphName + '.pdf'))
+	fitTime.set_xlim(xmax=paramList[-1])
+	decorateGraph(fitTime, "Polynomial model", "filter threshold value", 
+		"time ("+timeUnit+")", yLabelPos, "upper right")
+	
+	## 4) Save file(s)
+	savedFiles = []
+	if not cut:
+		fileName = paramName + "-vs-time["+confName+"]-" + graphName + ".pdf"
+		f.savefig(join(graphsDir, fileName))
+		savedFiles.append(join(graphsDir, fileName))
+	else:
+		for i, f in enumerate([p[0] for p in individualPlots]):
+			fileName = paramName + "-vs-time["+confName+"]-" + graphName +\
+				'-' + str(i+1) + ".pdf"
+			f.savefig(join(graphsDir, fileName))
+			savedFiles.append(join(graphsDir, fileName))
 	pl.close()
-	return [join(outputDirectory, "graphs", 
-		paramName + '-vs-time'+'['+confName+']'+'-' + graphName + '.pdf')]
+	return savedFiles
 
 
 ## Creates a plot showing the relation between the variation of ONE chosen parameter and similarity of 
 ## the resultant thesaurus with WordNet
-## MODEL?????????????????????????????
-def createPlotSingleParamVsWNSim(paramList, statsDictionary, outputDirectory, graphName="",
+## Model: polynomial
+## @return names of saved files
+def createPlotSingleParamVsWNSim(paramList, statsDictionary, graphsDir, graphName="",
 	paramName="", confName="", verbose=False, cut=False):
 	
-	## figure set up
-	f, (sim) = pl.subplots(1, 1)
-	f.set_size_inches(8.3, 5.8) ## set figure size to A4
-	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## add margins
-	f.suptitle(graphName+' ['+confName+']'+'\nVariation of '+paramName+\
-		' - impact on similarity with WordNet', fontsize=14, fontweight='bold')
-	yLabelPos = [-0.1, 0.5] 
+	## 1) Figure set up
+	yLabelPos = [-0.1, 0.5]
+	fileInfo, confInfo = "Input file:" +  graphName, "\nFixed settings:" +  confName
+	if not cut:
+		f, (sim, fitSim) = pl.subplots(2, 1)
+		f.set_size_inches(8.3, 11.7) ## set figure size to A4
+		f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.4) ## margins
+		## title
+		f.suptitle("Variation of the " + fullParamName(paramName) +\
+			"\nImpact on similarity with WordNet", fontsize=14, fontweight='bold')
+		## info on the file and configuration used
+		f.text(0.02, 1, fileInfo, horizontalalignment='left', verticalalignment='top',
+			transform = f.transFigure, fontsize=10)
+		f.text(0.98, 1, confInfo, horizontalalignment='right', verticalalignment='top',
+			transform = f.transFigure, fontsize=10)
+	else:
+		individualPlots = [pl.subplots(1, 1) for x in xrange(2)]
+		figures = [p[0] for p in individualPlots]
+		sim, fitSim = [p[1] for p in individualPlots]
+		for f in figures:
+			## size and margins
+			f.set_size_inches(8.3, 5.8)
+			f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2)
+			## title
+			f.suptitle("Variation of the " + fullParamName(paramName) +\
+				"\nImpact on similarity with WordNet", fontsize=14, fontweight='bold')
+			## info on the file and configuration used
+			f.text(0.02, 1, fileInfo, horizontalalignment='left', verticalalignment='top',
+				transform = f.transFigure, fontsize=10)
+			f.text(0.98, 1, confInfo, horizontalalignment='right', verticalalignment='top',
+				transform = f.transFigure, fontsize=10)	
 	
-	## REPRESENT THE DATA
+	## 2) Data representation
 	simWithWn = statsDictionary["Similarity_With_WordNet"]
 	sim.plot(paramList, simWithWn, color="firebrick", marker='o', linestyle="dashed",
 		label="sim function of "+paramName, alpha=0.6)
 		
-	decorateGraph(sim, 'Similarity with WordNet', string.lower(paramName)+" value", 
+	decorateGraph(sim, "Similarity with WordNet", "filter threshold value", 
 		"similarity score", yLabelPos)
 	
-	## save figure
-	f.savefig(join(outputDirectory, "graphs", 
-		paramName + '-vs-WN-sim'+'['+confName+']'+'-' + graphName + '.pdf'))
+	## 3) Model fitting
+	fitSim.fill_between(paramList, simWithWn, color="lightgrey")
+	## fit functions (if enough values)
+	if len(paramList) >= 2:
+		method = 6
+		mFit, mLabel, mColor= fittingMethod(paramList, simWithWn, method, verbose=verbose)
+		mLabel = "polynomial model proposed"
+		fitSim.plot(paramList, mFit, label=mLabel, color=mColor)
+
+	fitSim.set_xlim(xmax=paramList[-1])
+	decorateGraph(fitSim, "Polynomial model", "filter threshold value", 
+		"frequency", yLabelPos, "upper right")
+	
+	## 4) Save file(s)
+	savedFiles = []
+	if not cut:
+		fileName = paramName + "-vs-WN-sim["+confName+"]-" + graphName + ".pdf"
+		f.savefig(join(graphsDir, fileName))
+		savedFiles.append(join(graphsDir, fileName))
+	else:
+		for i, f in enumerate([p[0] for p in individualPlots]):
+			fileName = paramName + "-vs-WN-sim["+confName+"]-" + graphName +\
+				'-' + str(i+1) + ".pdf"
+			f.savefig(join(graphsDir, fileName))
+			savedFiles.append(join(graphsDir, fileName))
 	pl.close()
-	return [join(outputDirectory, "graphs", 
-		paramName + '-vs-WN-sim'+'['+confName+']'+'-' + graphName + '.pdf')]
+	return savedFiles
 	
 	
 ## Converts a list of file sizes to a target unit (bytes system), either specified or determined based on the average size
@@ -908,28 +983,5 @@ def convertTimeRange(timesList, fixedUnit=None):
 			#~ os.system("rm -r " + join(outputDirectory, directory))
 			#~ if verbose:
 				#~ print "   Deleted directory " + directory
-
-
-## Prints an array or a dictionary with customizable start, end, line length and title
-def print_lines(list, min=0, max=0, line_max=0, title="List"):
-	if max == 0:
-		max = len(list)
-	print "\n" + title
-	if type(list) is dict:
-		for i, key in enumerate(sorted(list.iterkeys())) :
-			if i<max:
-				if type(list[key]) is dict:
-					print_lines(list[key], title=key)
-				else:
-					print "   " + (key + str(list[key]))[:line_max] +  "..." \
-						if line_max != 0 and len(key + str(list[key])) > line_max else "   " + key + str(list[key])
-			else:
-				break
-	else:
-		for index in range(min, max):
-			print "   " + str(list[index])[:line_max] + "..." \
-				if  line_max != 0 and len(str(list[index])) > line_max else "   " + str(list[index])
-	print ""
-
 
 
