@@ -873,7 +873,7 @@ class BybloCmp:
 			nbEntries += 1
 			nbEvents += len(entry.split()) -1
 		
-		## add them to thr dictionary
+		## add them to the dictionary
 		statsDict["Total_Number_Of_Distinct_Entries"] = [nbEntries]
 		statsDict["Total_Number_Of_Distinct_Events"] = [nbEvents]
 		statsDict["Average_Number_Of_Events_By_Entry"] = [1.0 * nbEntries / nbEvents]
@@ -893,7 +893,7 @@ class BybloCmp:
 			simWithWN.append( iteration["sim-with-WN"] )
 			simWithPrev.append( iteration["sim-with-prev"] )
 		
-		## add them to thr dictionary
+		## add them to the dictionary
 		statsDict["Number_Of_Lines_In_File_.entries.filtered"] = nbFilteredEntries
 		statsDict["Number_Of_Lines_In_File_.features.filtered"] = nbFilteredFeatures
 		statsDict["Number_Of_Lines_In_File_.events.filtered"] = nbFilteredEvents
@@ -908,7 +908,7 @@ class BybloCmp:
 	## Analyses parameter strings used throughout this sequence of Byblo iteration to...
 	## 1) Produce, for each studied parameter (fef, fff, fvf, Smn), a list of the distinct values it takes 
 	## (if there are several of them)
-	## 2) Based on these lists, determine wether each string can be studied in a linear way (line plot), 
+	## 2) Based on these lists, determine whether each string can be studied in a linear way (line plot), 
 	## or will have to be studied separately (bar chart)
 	## @return allStrings, stringsForCharts, stringsForPlots, parameterValuesLists
 	def sortParameterStrings(self):

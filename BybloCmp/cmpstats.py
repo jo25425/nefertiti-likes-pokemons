@@ -33,7 +33,7 @@ __author__ = "Joanne Robert"
 __copyright__ = "Copyright (c) 2012, University of Sussex"
 __credits__ = ["Joanne Robert", "Hamish Morgan"]
 __license__ = "3-clause BSD"
-__version__ = "1.0.0"
+__version__ = "2.0"
 __maintainer__ = "Joanne Robert"
 __email__ = "jr317@sussex.ac.uk"
 __status__ = "Development"
@@ -555,15 +555,15 @@ def generatePlots(statsDict, paramList, paramListUser, paramListAuto, paramValue
 ##		1) the main dictionary (statistics for everything in the order in which the parameter strings 
 ##		were used), 
 ##		2) three separate lists for all of the parameter strings, those that can be studied in relation to others,
-##		and those which are completely independant,
+##		and those which are completely independent,
 ##		3) the lists of values for each of the studied parameters.
 ## The result is:
-##		1) a dictionary for independant parameter strings
+##		1) a dictionary for independent parameter strings
 ##			{ str1 : 	{ stat1 : 	[v1, v2, ...],
 ##					   stat2 :	... },
 ##			   str2 :	... }
-##		2) a dictionary for studiable parameter strings (fsorted following the ascending order of 
-## 		parameter values
+##		2) a dictionary for the parameter strings studied (sorted following the ascending order of 
+## 		parameter values)
 ##			{ param1 : { conf1 :	{ stat1 : 	[v1, v2, ...],
 ##					   			   stat2 :	... },
 ##					     conf2 : ... },
