@@ -280,28 +280,28 @@ if __name__=='__main__':
 	## parse command line
 	parser = argparse.ArgumentParser(description='Compare two thesauri.')
 	
-	# input file for words
+	## input file for words
 	parser.add_argument(metavar='file', dest='inputFile', action='store',
 		help='input file for words to build a thesaurus for')
-	# output file for thesaurus
+	## output file for thesaurus
 	parser.add_argument('-o', '--output', metavar='file', dest='outputFile',
 		action='store',
 		help='output file where the thesaurus will be written ' +
 			'(default: input file name + \".WN\")')
-	# database for similarity scores (base thesaurus)
+	## database for similarity scores (base thesaurus)
 	parser.add_argument('-db', '--database', metavar='file', dest='database',
 		action='store', default="...ThesAuto/database.sims",
 		help='base thesaurus acting as a database for similarity scores ' +
 			'(default: "...ThesAuto/database.sims")')
-	# fixed maximum rank distance
+	## fixed maximum rank distance
 	parser.add_argument('-k', '--max-rank', metavar='n', type=positiveInt, dest='maxRank',
 		action='store', default=100,
 		help='number of neighbours to keep (default: 100)')
-	# discard option for words
+	## discard option for words
 	parser.add_argument('-d', '--discard', dest='discard',
 		action='store_true', default=False,
 		help='discard the record of words that appear in WordNet (default: False)')
-	# verbose option
+	## verbose option
 	parser.add_argument('-v', '--verbose', dest='verbose', 
 		action='store_true', default=False,
 		help='display information about operations (default: False)')

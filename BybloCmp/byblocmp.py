@@ -33,7 +33,7 @@ __author__ = "Joanne Robert"
 __copyright__ = "Copyright (c) 2012, University of Sussex"
 __credits__ = ["Joanne Robert"]
 __license__ = "3-clause BSD"
-__version__ = "2.0"
+__version__ = "2.1"
 __maintainer__ = "Joanne Robert"
 __email__ = "jr317@sussex.ac.uk"
 __status__ = "Development"
@@ -65,7 +65,8 @@ BYBLO_OUTPUT_EXTENSIONS= [	".entries", ".entries.filtered",
 
 class BybloCmp:
 	"""
-	Compare methods for the construction of a disitributional thesaurus
+	Helps setting up Byblo correctly for the construction of a disitributional thesaurus.
+	Produces statistics, generates graphs.
 	"""
 	
 	## Initialises the parameters of the module
@@ -479,7 +480,16 @@ class BybloCmp:
 				parameters = raw_input("Parameters for this iteration of Byblo? ")
 				if self.parser.checkBybloSettings(parameters, type='studied'): break
 				else: print ""
-		return parameters
+		return "" if not parameters else self.rearrangeParameters(parameters)
+	
+	
+	## Rearranges parameters within the parameter string so that they're  always in the same order.
+	## @return correctly "sorted" string
+	def rearrangeParameters(self, parameters):
+		fields = parameters.split(' ')
+		tuples = [(fields[i], fields[i+1]) for i in range(0, len(fields), 2)]
+		tuples.sort()
+		return ' '.join([' '.join(t) for t in tuples]) 
 	
 	
 	## Runs Byblo in a subprocess, renames files produced so that they reflect the settings used,
@@ -832,7 +842,6 @@ class BybloCmp:
 			self.printer.info("Sequence plotting only possible from the second iteration. Skipped.")
 		else:
 			allStrings, stringsForCharts, stringsForPlots, paramDict = self.sortParameterStrings()
-			
 			## generate plots
 			self.record[-1]["plots"] = cmpstats.generatePlots(
 				statsDict,			# statsDict
@@ -918,23 +927,27 @@ class BybloCmp:
 			for p in [p for p in paramNames if p not in allStrings[i]]:
 					allStrings[i]  += (' ' if allStrings[i]  else '') + '-' + p + " 0"
 		
-		## create lists of distinct values used for each parameter
-		for settings in allStrings:
+		## find the parameter strings that can be studied in plots
+		toValues = lambda s: [v for i, v in enumerate(s.split()) if i%2]
+		countCommonValues = lambda l1, l2: sum([1 for a, b in zip(l1, l2) if a==b])
+		for s1 in allStrings:
+			for s2 in allStrings:
+				if countCommonValues(toValues(s1), toValues(s2)) == 3:
+					stringsForPlots.append(s1)
+					break
+		
+		## find the parameter strings that will have to be studied in bar charts
+		stringsForCharts = [s for s in allStrings if s not in stringsForPlots]
+			
+		## create lists of distinct values to study for each parameter
+		for settings in stringsForPlots:
 			things = settings.split(' ')
 			## look for each parameter in the string...
 			for param in [p for p in paramNames if p in settings]:
 				## ... and add its value to the right list (if it isn't already there)
 				value = int(things[ things.index('-'+param) + 1 ])
 				if value not in paramDict[param]: paramDict[param].append(value)
-		
-		## create lists of values in this dictionary# and sort strings
-		for settings in allStrings:
-			## look for parameters that are 1) in the string, and 2) varying (several values)
-			if [p for p in paramNames if p in settings and len(paramDict[p]) > 1]: 
-				stringsForPlots.append(settings)
-			else: 
-				stringsForCharts.append(settings)
-		
+			
 		## lists of values for parameters that will be studied "several values"
 		paramValuesLists = [paramDict[p] if len(paramDict[p]) > 1 else [] for p in paramNames]
 		return allStrings, stringsForCharts, stringsForPlots, paramValuesLists

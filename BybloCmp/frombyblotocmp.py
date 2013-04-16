@@ -60,7 +60,7 @@ BYBLO_OUTPUT_EXTENSIONS= [	".entries", ".entries.filtered",
 def paramSubstring(str):
 	return '#' + string.replace(str, ' ', '_')
 
-
+## Exracts text ftom a given file, at a given line, between the given start and end texts.
 def extractText(fileName, lineIndex, start, end, mod):
 	text = list(open(fileName, 'r'))[lineIndex]
 	if text.startswith(start) and text.endswith(end):
@@ -68,12 +68,14 @@ def extractText(fileName, lineIndex, start, end, mod):
 	else:
 		return -1
 
+## Retrieves from a Byblo execution log the path to the input file
 def retrieveInputFile(logFileName):
 	start, end = " * Input instances file: ", "\n"
 	identity = lambda x: x
 	inputFile = extractText(logFileName, 7, start, end, identity)
 	return inputFile
 	
+## Retrieves from a BYblo execution log the running time of the complete execution
 def retrieveRunningTime(logFileName):
 	start, end = " * Elapsed time: ", "\n"
 	toSeconds = lambda timeString: sum( [float(t)*60**(2-i) for i, t in enumerate( timeString.split(':') )] )

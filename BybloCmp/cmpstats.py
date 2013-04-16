@@ -287,7 +287,7 @@ def generateHistograms(sampleFileNames, paramList, outputDir, bybloDir, reuse=[]
 ## Both normal and logarithmic scale are created, together with a (for now (very) false) model attempt
 ## @return names of the saved files
 def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=False, cut=False):
-	## generate the histograms
+	## 0) Preparation of the data
 	XBASE, YBASE = 2, 10
 	LIMITS = [1, 2.0 ** 64]
 	reducedFileSuffix = ".filtered"
@@ -382,7 +382,7 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 ## Only normal scale (values between 0 and 1), no model
 ## @return names of saved files
 def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, verbose=False):
-	## generate the histograms
+	## 0)Preparation of the data
 	XBASE, YBASE = 10, 10
 	LIMITS = [0, 1]
 	step = 0.01
@@ -394,7 +394,7 @@ def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, verbose=F
 		reducedBins, reducedHist = extractRowsValues(join(thesauriDir, fileName + reducedFileSuffix),
 			LIMITS, [XBASE, YBASE], step, verbose)
 	
-	## figure set up
+	## 1) Figure set up
 	f, (sims) = pl.subplots()
 	f.set_size_inches(8.3, 5.8) ## set figure size to A5
 	f.subplots_adjust(left=0.15, right=0.85) ## add margins
@@ -402,8 +402,7 @@ def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, verbose=F
 		fontsize=14, fontweight='bold')
 	yLabelPos = [-0.1, 0.5]
 	
-	## REPRESENT THE DATA
-	## bar chart
+	## 2) Representation of the data
 	noThreshold = sims.bar(bins[:-1], hist, width=bins[1:] - bins[:-1], 
 		color="orange", label="No threshold")
 	if hasFiltered:
@@ -412,6 +411,7 @@ def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, verbose=F
 	decorateGraph(sims, 'Linear scale', "similarity score", "frequency", 
 		yLabelPos, "upper right" if hasFiltered else None, largeY=True)
 
+	## 3) Save file
 	f.savefig(join(graphsDir, 'Histogram-' + fileName + '.pdf'))
 	pl.close()
 	return [join(graphsDir, 'Histogram-' + fileName + '.pdf')]
@@ -553,6 +553,7 @@ def generatePlots(statsDict, paramList, paramListUser, paramListAuto, paramValue
 ## @return userDict, singleParamVarDicts, paramValuesLists
 def decomposeDictionary(mainDict, allParamStrings, paramStringsUser, paramStringsAuto, 
 	paramValuesLists):
+	
 	## PARAMETER STRINGS SPECIFIED BY THE USER
 	userDict = {}
 	if paramStringsUser:
@@ -618,98 +619,116 @@ def decomposeDictionary(mainDict, allParamStrings, paramStringsUser, paramString
 ## Creates bar chart showing the relation between the parameters used and the result files obtained 
 ## by running Byblo (size and # of lines)
 ## No model: the parameters (x values) are not continuous data
+## @return names of saved files
 def createBarsParametersVsFiles(paramList, statsDictionary, graphsDir, graphName="", 
 	verbose=False, cut=False):
-## figure set up
-	f, (lines) = pl.subplots(1, 1)
-	f.set_size_inches(8.3, 5.8) ## set figure size to A4
-	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## margins
-	f.suptitle(graphName+'\nVariation of the parameters - Impact on result files', 
+	
+	## 1) Figure set up
+	f, (nbItems) = pl.subplots(1, 1)
+	yLabelPos = [-0.1, 0.5] ## A5
+	f.set_size_inches(8.3, 5.8)
+	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2)
+	## title
+	f.suptitle("Variation of the parameters\nImpact on item counts", 
 		fontsize=14, fontweight='bold')
-	yLabelPos = [-0.1, 0.5] 
+	## info on the file used
+	f.text(0.02, 1, "Input file:" +  graphName, horizontalalignment='left', 
+		verticalalignment='top', transform = f.transFigure, fontsize=10)
 	
-	## draw LINES plots for each result file
-	suffixes = ['.entries.filtered', '.events.filtered', '.sims.neighbours']
-	colors = ['RoyalBlue', 'red', 'gold', 'MediumVioletRed', 'DarkOrange', 'Chartreuse']
+	## 2) Data representation
+	itemTypes = ["Entries", "Features", "Events", "Thesaurus_Entries"]
+	colors = ["RoyalBlue", "red", "gold", "Chartreuse"]
 	ind = np.arange(len(paramList))
-	width = 0.5 / len(paramList)
-	for i, (suffix, color) in enumerate(zip(suffixes, colors)):
-		linesResultFile  = statsDictionary["Number_Of_Lines_In_File_"+suffix]
-		lines.bar(ind+width*i, linesResultFile, width=width, align='center', color=color, label=suffix)
-		
-	decorateGraph(lines, 'Lines in the result files', "parameter string for Byblo", "number of lines", \
-		yLabelPos, "upper left", largeX=True, largeY=True)
+	width = 0.2
+	for i, (item, color) in enumerate(zip(itemTypes, colors)):
+		itemCount  = statsDictionary["Number_Of_"+item+"_After_Filtering"]
+		nbItems.bar(ind+0.2*(i+1), itemCount, width=width, align="center", color=color, label=item)
 	
-	lines.set_xticks(ind+len(paramList)*width*0.5)
-	lines.set_xticklabels(paramList, rotation=15, size='small')
-
-	## save figure
-	f.savefig(join(graphsDir, 'Param-strings-vs-files-' + graphName + '.pdf'))
+	nbItems.set_xticks(ind+0.5)
+	nbItems.set_xticklabels(paramList, rotation=15, size='small')
+	nbItems.set_xlim(xmin=0, xmax=len(paramList))
+	decorateGraph(nbItems, "Item counts", "full parameter string", "number of items", 
+		yLabelPos, "upper left", largeY=True)
+	
+	## 3) Save file
+	f.savefig(join(graphsDir, "Param-strings-vs-files-" + graphName + '.pdf'))
 	pl.close()
-	return [join(graphsDir, 'Param-strings-vs-files-' + graphName + '.pdf')]
+	return [join(graphsDir, "Param-strings-vs-files-" + graphName + '.pdf')]
 
 
 ## Creates a bar chart showing the relation between the parameters used and the run time of Byblo
 ## No model: the parameters (x values) are not continuous data
+## @return names of saved files
 def createBarsParametersVsTime(paramList, statsDictionary, graphsDir, graphName="", 
 	verbose=False, cut=False):
-	## figure set up
+	
+	## 1) Figure set up
 	f, (time) = pl.subplots(1, 1)
-	f.set_size_inches(8.3, 5.8) ## set figure size to A5
-	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## margins
-	f.suptitle(graphName+'\nVariation of the parameters - Impact on run time', 
+	yLabelPos = [-0.1, 0.5]
+	f.set_size_inches(8.3, 5.8) ## A5
+	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2)
+	## title
+	f.suptitle("Variation of the parameters\nImpact on running time", 
 		fontsize=14, fontweight='bold')
-	yLabelPos = [-0.1, 0.5] 
+	## info on the file used
+	f.text(0.02, 1, "Input file:" +  graphName, horizontalalignment='left', 
+		verticalalignment='top', transform = f.transFigure, fontsize=10)
 	
-	## REPRESENT THE DATA
-	ind = np.arange(len(paramList))
-	width = 0.5 / len(paramList)
+	## 2) Data representation
 	times, timeUnit = convertTimeRange(statsDictionary["Byblo_Run_Time"])
-	time.bar(ind+width, times, width=width, align='center', color='aquamarine', 
-		label="run time on parameters")
-		
-	decorateGraph(time, "Run time based on Byblo parameters", "parameter string for Byblo", 
-		"time ("+timeUnit+")", yLabelPos, largeY=True)
+	ind = np.arange(len(paramList))
+	width = 0.5
+	time.bar(ind+0.5, times, width=width, align="center", color="aquamarine", 
+		label="run time function of parameters")
 	
-	time.set_xticks(ind+len(paramList)*width*0.5)
+	time.set_xticks(ind+0.5)
 	time.set_xticklabels(paramList, rotation=15, size='small')
+	time.set_xlim(xmin=0, xmax=len(paramList))
+	decorateGraph(time, "Running time", "full parameter string", 
+		"time ("+timeUnit+")", yLabelPos, largeY=True)
 
-	## save figure
-	f.savefig(join(graphsDir, 'Param-strings-vs-time-' + graphName + '.pdf'))
+	## 3) Save file
+	f.savefig(join(graphsDir, "Param-strings-vs-time-" + graphName + '.pdf'))
 	pl.close()
-	return [join(graphsDir, 'Param-strings-vs-time-' + graphName + '.pdf')]
+	return [join(graphsDir, "Param-strings-vs-time-" + graphName + '.pdf')]
 
 
 ## Creates a bar chart showing the relation between the parameters used and the similarity of 
 ## the resultant thesaurus with WordNet
 ## No model: the parameters (x values) are not continuous data
+## @return names of saved files
 def createBarsParametersVsWNSim(paramList, statsDictionary, graphsDir, graphName="", 
 	verbose=False, cut=False):
-	## figure set up
+	
+	## 1) Figure set up
 	f, (sim) = pl.subplots(1, 1)
-	f.set_size_inches(8.3, 5.8) ## set figure size to A5
-	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## margins
-	f.suptitle(graphName+'\nVariation of the parameters - Impact on similarity with WordNet', 
+	yLabelPos = [-0.1, 0.5]
+	f.set_size_inches(8.3, 5.8) ## A5
+	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2)
+	## title
+	f.suptitle("Variation of the parameters\nImpact on similarity with WordNet", 
 		fontsize=14, fontweight='bold')
-	yLabelPos = [-0.1, 0.5] 
+	## info on the file used
+	f.text(0.02, 1, "Input file:" +  graphName, horizontalalignment='left', 
+		verticalalignment='top', transform = f.transFigure, fontsize=10)
 	
-	## REPRESENT THE DATA
-	ind = np.arange(len(paramList))
-	width = 0.5 / len(paramList)
+	## 2) Data representation
 	simWithWn= statsDictionary["Similarity_With_WordNet"]
-	sim.bar(ind+width, simWithWn, width=width, align='center', color='aquamarine', 
+	ind = np.arange(len(paramList))
+	width = 0.5
+	sim.bar(ind+0.5, simWithWn, width=width, align="center", color="SpringGreen", 
 		label="sim function of parameters")
-		
-	decorateGraph(sim, "SImilarity with WordNet", "parameter string for Byblo", 
-		"similarity score", yLabelPos)
 	
-	sim.set_xticks(ind+len(paramList)*width*0.5)
+	sim.set_xticks(ind+0.5)
 	sim.set_xticklabels(paramList, rotation=15, size='small')
+	sim.set_xlim(xmin=0, xmax=len(paramList))
+	decorateGraph(sim, "Similarity with WordNet", "full parameter string", 
+		"similarity score", yLabelPos)
 
-	## save figure
-	f.savefig(join(graphsDir, 'Param-strings-vs-WN-sim-' + graphName + '.pdf'))
+	## 3) Save file
+	f.savefig(join(graphsDir, "Param-strings-vs-WN-sim-" + graphName + '.pdf'))
 	pl.close()
-	return [join(graphsDir, 'Param-strings-vs-WN-sim-' + graphName + '.pdf')]
+	return [join(graphsDir, "Param-strings-vs-WN-sim-" + graphName + '.pdf')]
 
 
 ## Creates a abar chart showing the relation between the parameters used and the similarity there is
@@ -717,37 +736,42 @@ def createBarsParametersVsWNSim(paramList, statsDictionary, graphsDir, graphName
 ## No model: the parameters don't follow any rule and appear in simple chronological order
 def createBarsAllParametersVsIterSim(paramList, statsDictionary, graphsDir, 
 	graphName="", verbose=False, cut=False):
-	## figure set up
+	
+	
+	## 1) Figure set up
 	f, (sim) = pl.subplots(1, 1)
-	f.set_size_inches(8.3, 5.8) ## set figure size to A5
-	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## margins
-	f.suptitle(graphName+'\nVariation of the parameters - Impact on similarity between iterations', 
+	yLabelPos = [-0.1, 0.5]
+	f.set_size_inches(8.3, 5.8) ## A5
+	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2)
+	## title
+	f.suptitle("Variation of the parameters\nImpact on similarity between iterations", 
 		fontsize=14, fontweight='bold')
-	yLabelPos = [-0.1, 0.5] 
+	## info on the file used
+	f.text(0.02, 1, "Input file:" +  graphName, horizontalalignment='left', 
+		verticalalignment='top', transform = f.transFigure, fontsize=10)
 	
-	## REPRESENT THE DATA
-	ind = np.arange(len(paramList))
-	width = 1.0 
+	## 2) Data representation
 	simWithPrev = statsDictionary["Similarity_With_Previous"][1:] + [0]
-	sim.bar(ind+width*0.5, simWithPrev, width=width, align='center', color='goldenrod', 
-		label="sim between iter")
-		
-	decorateGraph(sim, "SImilarity between resultant thesauri", 
-		"parameter string for Byblo", "similarity score", yLabelPos)
+	ind = np.arange(len(paramList))
+	width = 0.5
+	sim.bar(ind+0.5, simWithPrev, width=width, align="center", color="goldenrod", 
+		label="sim between iterations")
 	
-	## modify here!
-	sim.set_xticks(ind*width)
+	sim.set_xticks(ind)
 	sim.set_xticklabels(paramList, rotation=15, size='small')
+	sim.set_xlim(xmin=0, xmax=len(paramList)-1)
+	decorateGraph(sim, "Similarity between constructed thesauri", 
+		"full parameter string", "similarity score", yLabelPos)
 
-	## save figure
-	f.savefig(join(graphsDir, 'Param-strings-vs-iter-sim-' + graphName + '.pdf'))
+	## 3) Save file
+	f.savefig(join(graphsDir, "Param-strings-vs-iter-sim-" + graphName + '.pdf'))
 	pl.close()
-	return [join(graphsDir, 'Param-strings-vs-iter-sim-' + graphName + '.pdf')]
+	return [join(graphsDir, "Param-strings-vs-iter-sim-" + graphName + '.pdf')]
 
 
 ## Creates plots showing the relation between the parameters used and the result files obtained 
 ## by running Byblo (# of lines)
-## No model (too many counts)
+## Model: none (too many counts)
 ## @return names of saved files
 def createPlotSingleParamVsFiles(paramList, statsDictionary, graphsDir, graphName="",
 	paramName="", confName="", verbose=False, cut=False):
@@ -756,8 +780,9 @@ def createPlotSingleParamVsFiles(paramList, statsDictionary, graphsDir, graphNam
 	yLabelPos = [-0.1, 0.5]
 	fileInfo, confInfo = "Input file:" +  graphName, "\nFixed settings:" +  confName
 	f, (nbItems) = pl.subplots(1, 1)
-	f.set_size_inches(8.3, 11.7) ## set figure size to A4
-	f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.4) ## margins
+	##size and margins
+	f.set_size_inches(8.3, 5.8) ## A5
+	f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2)
 	## title
 	f.suptitle("Variation of the " + fullParamName(paramName) +\
 		"\nImpact on item counts", fontsize=14, fontweight='bold')
@@ -778,7 +803,7 @@ def createPlotSingleParamVsFiles(paramList, statsDictionary, graphsDir, graphNam
 	decorateGraph(nbItems, "Item counts", "filter threshold value", "number of items", 
 		yLabelPos, "upper left", largeX=True, largeY=True)
 	
-	## 4) Save file
+	## 3) Save file
 	fileName = paramName + "-vs-counts["+confName+"]-" + graphName + ".pdf"
 	f.savefig(join(graphsDir, fileName))
 	pl.close()
