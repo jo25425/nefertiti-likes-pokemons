@@ -59,7 +59,7 @@ from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 def paramSubstring(str):
 	return '#' + string.replace(str, ' ', '_')
 	
-## Extracts from a file name the substrings produced by the 2 methods above
+## Extracts from a file name the substrings produced by the method above
 ## @return string reflecting parameters chosen
 def getParamSubstring(name):
 	end = basename(name)
@@ -106,7 +106,7 @@ def generateStringsFiles(sampleFileNames, paramList, thesauriDir, bybloDir,
 					## only convert wanted files
 					if not filesToCreate or srcFile in filesToCreate:
 						## ...but only if needed
-						if "byblo_stats" in reuse and isfile(srcFile+".strings"):
+						if "bybloOutput" in reuse and isfile(srcFile+".strings"):
 							vprint("Reusing converted file " + getParamSubstring(srcFile))
 						else:
 							vprint("Restoring strings for file " + getParamSubstring(srcFile))
@@ -299,12 +299,21 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 			LIMITS, [XBASE, YBASE], verbose=verbose)
 	
 	## 1) Figure set up
+	yLabelPos = [-0.1, 0.5]
+	fileInfo = "Input file:" +  fileName[:fileName.index('#')]
+	confInfo = string.replace(getParamSubstring(fileName), '_', ' ')
+	confInfo = "\nSettings:" +  confInfo[4:string.rfind(confInfo, '.')]
 	if not cut:
 		f, (linearScale, logScale, fitLinearScale, fitLogScale) = pl.subplots(4, 1)
 		f.set_size_inches(8.3, 11.7) ## set figure size to A4
 		f.subplots_adjust(left=0.15, right=0.85, wspace=None, hspace=0.4) ## margins
 		f.suptitle("Frequency distribution for " + fileName[string.rfind(fileName, '.')+1:], 
 			fontsize=14, fontweight='bold')
+		## info on the file and configuration used
+		f.text(0.02, 1, fileInfo, horizontalalignment='left', verticalalignment='top',
+			transform = f.transFigure, fontsize=10)
+		f.text(0.98, 1, confInfo, horizontalalignment='right', verticalalignment='top',
+			transform = f.transFigure, fontsize=10)
 	else:
 		individualPlots = [pl.subplots(1, 1) for x in xrange(4)]
 		figures = [p[0] for p in individualPlots]
@@ -314,8 +323,12 @@ def createOccurenceHistogram(label, fileName, thesauriDir, graphsDir, verbose=Fa
 			f.subplots_adjust(left=0.15, right=0.85, wspace=None, top=0.8, bottom=0.2) ## margins
 			f.suptitle("Frequency distribution for " + fileName[string.rfind(fileName, '.')+1:], 
 				fontsize=14, fontweight='bold')
+			## info on the file and configuration used
+			f.text(0.02, 1, fileInfo, horizontalalignment='left', verticalalignment='top',
+				transform = f.transFigure, fontsize=10)
+			f.text(0.98, 1, confInfo, horizontalalignment='right', verticalalignment='top',
+				transform = f.transFigure, fontsize=10)
 		
-	yLabelPos = [-0.1, 0.5]
 	
 	## 2) Data representation
 	## linear bar chart of 99% of the mass
@@ -395,12 +408,20 @@ def createSimilarityHistogram(label, fileName, thesauriDir, graphsDir, verbose=F
 			LIMITS, [XBASE, YBASE], step, verbose)
 	
 	## 1) Figure set up
+	yLabelPos = [-0.1, 0.5]
+	fileInfo = "Input file:" +  fileName[:fileName.index('#')]
+	confInfo = string.replace(getParamSubstring(fileName), '_', ' ')
+	confInfo = "\nSettings:" +  confInfo[4:string.rfind(confInfo, '.')]
 	f, (sims) = pl.subplots()
 	f.set_size_inches(8.3, 5.8) ## set figure size to A5
 	f.subplots_adjust(left=0.15, right=0.85) ## add margins
 	f.suptitle('Similarity score distribution for ' + fileName[string.rfind(fileName, '.')+1:], 
 		fontsize=14, fontweight='bold')
-	yLabelPos = [-0.1, 0.5]
+	## info on the file and configuration used
+	f.text(0.02, 1, fileInfo, horizontalalignment='left', verticalalignment='top',
+		transform = f.transFigure, fontsize=10)
+	f.text(0.98, 1, confInfo, horizontalalignment='right', verticalalignment='top',
+		transform = f.transFigure, fontsize=10)
 	
 	## 2) Representation of the data
 	noThreshold = sims.bar(bins[:-1], hist, width=bins[1:] - bins[:-1], 
@@ -807,7 +828,7 @@ def createPlotSingleParamVsFiles(paramList, statsDictionary, graphsDir, graphNam
 	fileName = paramName + "-vs-counts["+confName+"]-" + graphName + ".pdf"
 	f.savefig(join(graphsDir, fileName))
 	pl.close()
-	return join(graphsDir, fileName)
+	return [join(graphsDir, fileName)]
 
 
 ## Creates a plot showing the relation between the variation of ONE chosen parameter and

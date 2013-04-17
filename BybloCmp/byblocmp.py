@@ -234,7 +234,7 @@ class BybloCmp:
 		
 		## Special behaviours
 		## 1) change of input file / storage dir when current sequence not ended => end it
-		if attr in ["inputFile", "storageDir"] and self.record:
+		if attr in ["inputFile", "storageDir", "baseThesaurus"] and self.record:
 			self.printer.info("The current sequence will be ended now.")
 			self.plotSequence()
 		## 2) reuse option => convert string to list
@@ -314,11 +314,12 @@ class BybloCmp:
 	
 	
 	## Executes Byblo once, going through the following steps:
-	## 1. determine the parameters to use (checked by parser)
-	## 2. run Byblo with these parameters
-	## 3. evaluate the resultant thesaurus against the one from the previous iteration
-	## 4. generate histograms showing the distributions observed (of entries, features, events, and
-	##     similarity scores)
+	## 1. prepare the base thesaurus used for evaluation
+	## 2. determine the parameters to use (checked by parser)
+	## 3. run Byblo with these parameters
+	## 4. evaluate the resultant thesaurus against the one from the previous iteration
+	## 5. generate histograms for observed distributions (entries, features, events and similarities)
+	## 6. writing the iteration summary in the output file for comparison results
 	## Finally, the user is offered the possibility to end the current sequence.
 	## @return  True
 	def execution(self, args):
@@ -399,7 +400,7 @@ class BybloCmp:
 				[""], 
 				tmpDir,
 				self.bybloDir,
-				reuse=[],
+				reuse=self.reuse,
 				verbose=False,
 				filesToCreate = [entriesFile])
 			
@@ -434,9 +435,7 @@ class BybloCmp:
 		
 		## execute Byblo in a subprocess
 		logFile = open(devnull, 'w')
-		toExecute = "qsub " + self.sgeScript if self.sgeScript else abspath("./byblo.sh ")
-		print "to execute:", toExecute
-		out = subprocess.call(toExecute + " -i " + self.inputFile + " -o " + tmpDir +\
+		out = subprocess.call(abspath("./byblo.sh ") + " -i " + self.inputFile + " -o " + tmpDir +\
 			" --stages enumerate,count", shell=True, stdout=logFile, stderr=logFile)
 		if logFile: logFile.close()
 		
@@ -570,17 +569,34 @@ class BybloCmp:
 			if not exists(base + cmpstats.paramSubstring(parameters) + ext): 
 				return False
 		return True
+
+
+	## After the submission through SGE of the job whose name and submission log are passed, takes care
+	## of retrieving the running time of this job. Uses the log to find the job ID, wait for the job end,
+	## then only read the running time from this job's execution log.
+	## @return runtime or -1 if failure
+	def retrieveRunningTime(self, processName, logFileName):
+		## 1) retrieve job ID
+		start, end = "Your job ", "(\"" + processName + "\") has been submitted\n"
+		toInt = lambda intString: int(intString)
+		jobID = self.extractText("qsub.log", 0, start, end, toInt)
+		
+		## 2) check for subprocess end
+		returnCode = self.waitForJobEnd(jobID)
+
+		## 3) retrieve running time from Byblo log file
+		start, end = " * Elapsed time: ", "\n"
+		toSeconds = lambda timeString: sum( [float(t)*60**(2-i) for i, t in enumerate( timeString.split(':') )] )
+		time = self.extractText(processName + ".o" + str(jobID), -4, start, end, toSeconds)
+
+		## 4) delete unwanted files resulting from SGE submission
+		os.remove(processName + ".po" + str(jobID))
+		os.remove("qsub.log")
+
+		return time # -1 if there was an error at any point
 	
 	
-	## Returns the content of a file in a list, but only after this file has been written to.
-	## @retun list of a file content
-	def fileContentAfterWritten(self, filename):
-		content = ""
-		while not content: content = list(open(filename, 'r'))
-		return content
-	
-	
-	## Searchs in the given file, at the given line index, for some text starting after the given 
+	## Searches in the given file, at the given line index, for some text starting after the given 
 	## start string and finishing before the given end string. Then applies the given modification
 	## function to the text found.
 	## @return wanted info or -1 if not found
@@ -590,6 +606,14 @@ class BybloCmp:
 			return mod(text[ len(start) : text.index(end) ])
 		else:
 			return -1
+	
+	
+	## Returns the content of a file in a list, but only after this file has been written to.
+	## @retun list of a file content
+	def fileContentAfterWritten(self, filename):
+		content = ""
+		while not content: content = list(open(filename, 'r'))
+		return content
 
 
 	## Executes a subprocess for a given command, printing the execution log to the given log file.
@@ -622,31 +646,6 @@ class BybloCmp:
 				stime = time.time()
 		os.remove("qstat.log")
 		return 0
-
-
-	## After the submission through SGE of the job whose name and submission log are passed, takes care
-	## of retrieving the running time of this job. Uses the log to find the job ID, wait for the job end,
-	## then only read the running time from this job's execution log.
-	## @return runtime or -1 if failure
-	def retrieveRunningTime(self, processName, logFileName):
-		## 1) retrieve job ID
-		start, end = "Your job ", "(\"" + processName + "\") has been submitted\n"
-		toInt = lambda intString: int(intString)
-		jobID = self.extractText("qsub.log", 0, start, end, toInt)
-		
-		## 2) check for subprocess end
-		returnCode = self.waitForJobEnd(jobID)
-
-		## 3) retrieve running time from Byblo log file
-		start, end = " * Elapsed time: ", "\n"
-		toSeconds = lambda timeString: sum( [float(t)*60**(2-i) for i, t in enumerate( timeString.split(':') )] )
-		time = self.extractText(processName + ".o" + str(jobID), -4, start, end, toSeconds)
-
-		## 4) delete unwanted files resulting from SGE submission
-		os.remove(processName + ".po" + str(jobID))
-		os.remove("qsub.log")
-
-		return time # -1 if there was an error at any point
 	
 	
 	## Renames ALL of the output files of Byblo so that their name includes the parameter string used
@@ -711,7 +710,7 @@ class BybloCmp:
 				
 		## delete temporary file
 		os.remove(evalOutput)
-		self.printer.lines(self.record[-1], title="Record for the current interation")
+		self.printer.lines(self.record[-1], title="Record for the current iteration")
 	
 	
 	## Plots some statistics over a single iteration of Byblo using the cmpstats module.
@@ -740,6 +739,7 @@ class BybloCmp:
 				[parameters],		# paramList
 				self.storageDir, 	# outputDir
 				self.bybloDir, 		# bybloDir
+				reuse=self.reuse,
 				verbose=self.verbose,
 				cut=self.cut)
 				
