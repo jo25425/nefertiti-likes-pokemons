@@ -244,7 +244,7 @@ def fittingMethod(xdata, ydata, method, initialParameters=None, verbose=False):
 		fit = polyval(params, xdata)
 	
 	if verbose: print "[INFO] Modelling data using "+label+"[method "+str(method)+"]"
-	return fit, label, colors[method]
+	return fit, label, (params if method == 6 else colors[method])
 
 
 ## Generates histograms for Byblo result files (all sizes and parameter strings) containing counts of 
@@ -862,9 +862,18 @@ def createPlotSingleParamVsTime(paramList, statsDictionary, graphsDir, graphName
 	## fit functions (if enough values)
 	if len(paramList) >= 2:
 		method = 6
-		mFit, mLabel, mColor= fittingMethod(paramList, times, method, verbose=verbose)
+		nMin, nMax = min(paramList), max(paramList)
+		steps = np.arange(nMin, nMax, (nMax-nMin)/100.) ## for a smoother model
+		mFit, mLabel, mParams= fittingMethod(paramList, times, method, verbose=verbose)
 		mLabel = "polynomial model proposed"
-		fitTime.plot(paramList, mFit, label=mLabel, color=mColor)
+		fitTime.plot(paramList, mFit, label=mLabel, color="lime", linestyle="dashed")
+		fitTime.plot(steps, polyval(mParams, steps), label="smoothed model", color='red')
+
+		a, b, c = mParams
+		infoString = "Run time approximation:\nt(n) = " \
+			+ "%.3f" % (a)  + " x n**2 + " +  "%.3f" % (b)  + " x n + " + "%.3f" % (c)
+		fitTime.text(0.95, 0.05, infoString, horizontalalignment='right', verticalalignment='bottom', \
+			transform = fitTime.transAxes, fontsize=10, color="dimGrey")
 
 	fitTime.set_xlim(xmax=paramList[-1])
 	decorateGraph(fitTime, "Polynomial model", "filter threshold value", 
@@ -940,7 +949,7 @@ def createPlotSingleParamVsWNSim(paramList, statsDictionary, graphsDir, graphNam
 		method = 6
 		mFit, mLabel, mColor= fittingMethod(paramList, simWithWn, method, verbose=verbose)
 		mLabel = "polynomial model proposed"
-		fitSim.plot(paramList, mFit, label=mLabel, color=mColor)
+		fitSim.plot(paramList, mFit, label=mLabel, color="lime")
 
 	fitSim.set_xlim(xmax=paramList[-1])
 	decorateGraph(fitSim, "Polynomial model", "filter threshold value", 
@@ -998,15 +1007,3 @@ def convertTimeRange(timesList, fixedUnit=None):
 	else:
 		i = units.index(fixedUnit)
 		return timesList if i==0 else [s / 60**i for s in timesList]    
-	
-	
-## Deletes intermediary files needed for the statistics generation when they are in the list of item types (samples, 
-## thesauri, event_stats, byblo_stats) that the user specified for deletion
-#~ def deleteOnExit(deleteList, outputDirectory, sampleFiles=[], originalInputFile="", verbose=False):
-	#~ if(deleteList != ["nothing"]):
-		#~ for directory in deleteList:
-			#~ os.system("rm -r " + join(outputDirectory, directory))
-			#~ if verbose:
-				#~ print "   Deleted directory " + directory
-
-
