@@ -945,7 +945,8 @@ class BybloCmp:
 			## look for each parameter in the string...
 			for param in [p for p in paramNames if p in settings]:
 				## ... and add its value to the right list (if it isn't already there)
-				value = int(things[ things.index('-'+param) + 1 ])
+				value = int(things[ things.index('-'+param) + 1 ]) if p != "Smn" \
+					else float(things[ things.index('-'+param) + 1 ])
 				if value not in paramDict[param]: paramDict[param].append(value)
 			
 		## lists of values for parameters that will be studied "several values"
